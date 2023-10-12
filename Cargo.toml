@@ -1,0 +1,7 @@
+[package]
+name = "musig2"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+secp256k1 = "0.28.0"
