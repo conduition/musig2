@@ -1,3 +1,5 @@
+# Source: https://github.com/bitcoin/bips/blob/master/bip-0327/reference.py
+#
 # BIP327 reference implementation
 #
 # WARNING: This implementation is for demonstration purposes only and _not_ to
