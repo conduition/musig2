@@ -6,6 +6,10 @@ MuSig2 allows groups of mutually distrusting parties to cooperatively sign data 
 
 Specifically, this crate implements [BIP-0327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki), for creating and verifying signatures which validate under Bitcoin consensus rules, but the protocol is flexible and can be applied to any N-of-N multisignature use-case.
 
+## ⚠️ Beta Status ⚠️
+
+This crate is in beta status. The latest release is a `v0.0.x` version number. Expect breaking changes and security fixes. Once this crate is stabilized, we will tag and release `v1.0.0`.
+
 ## Overview
 
 If you're not already familiar with MuSig2, the process of cooperative signing runs like so:
