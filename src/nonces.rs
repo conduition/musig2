@@ -781,7 +781,7 @@ where
 mod tests {
     use super::*;
 
-    use crate::testhex;
+    use crate::{testhex, KeyAggContext};
 
     #[test]
     fn test_nonce_generation() {
@@ -903,5 +903,92 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn nonce_reuse_demo() {
+        let alice_seckey = Scalar::try_from([0x11; 32]).unwrap();
+        let bob_seckey = Scalar::try_from([0x22; 32]).unwrap();
+
+        let alice_pubkey = alice_seckey * G;
+        let bob_pubkey = bob_seckey * G;
+
+        let key_agg_ctx = KeyAggContext::new([alice_pubkey, bob_pubkey]).unwrap();
+
+        let message = b"you betta not sign this twice";
+
+        let alice_secnonce = SecNonceBuilder::new([0xAA; 32]).build();
+        let bob_secnonce_1 = SecNonceBuilder::new([0xB1; 32]).build();
+        let bob_secnonce_2 = SecNonceBuilder::new([0xB2; 32]).build();
+        let bob_secnonce_3 = SecNonceBuilder::new([0xB3; 32]).build();
+
+        // First signature
+        let aggnonce_1 =
+            AggNonce::sum([alice_secnonce.public_nonce(), bob_secnonce_1.public_nonce()]);
+        let s1: MaybeScalar = crate::sign_partial(
+            &key_agg_ctx,
+            alice_seckey,
+            alice_secnonce.clone(),
+            &aggnonce_1,
+            &message,
+        )
+        .unwrap();
+
+        // Second signature
+        let aggnonce_2 =
+            AggNonce::sum([alice_secnonce.public_nonce(), bob_secnonce_2.public_nonce()]);
+        let s2: MaybeScalar = crate::sign_partial(
+            &key_agg_ctx,
+            alice_seckey,
+            alice_secnonce.clone(),
+            &aggnonce_2,
+            &message,
+        )
+        .unwrap();
+
+        // Third signature
+        let aggnonce_3 =
+            AggNonce::sum([alice_secnonce.public_nonce(), bob_secnonce_3.public_nonce()]);
+        let s3: MaybeScalar = crate::sign_partial(
+            &key_agg_ctx,
+            alice_seckey,
+            alice_secnonce.clone(),
+            &aggnonce_3,
+            &message,
+        )
+        .unwrap();
+
+        // Alice gives Bob `(s1, s2, s3)`.
+        // Bob can now compute Alice's secret key.
+        let a = key_agg_ctx.key_coefficient(&alice_pubkey).unwrap();
+
+        let b1 = aggnonce_1.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
+        let b2 = aggnonce_2.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
+        let b3 = aggnonce_3.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
+
+        let e1 = crate::compute_challenge_hash_tweak(
+            &aggnonce_1.final_nonce(b1).serialize_xonly(),
+            &key_agg_ctx.aggregated_pubkey(),
+            &message,
+        );
+        let e2 = crate::compute_challenge_hash_tweak(
+            &aggnonce_2.final_nonce(b2).serialize_xonly(),
+            &key_agg_ctx.aggregated_pubkey(),
+            &message,
+        );
+        let e3 = crate::compute_challenge_hash_tweak(
+            &aggnonce_3.final_nonce(b3).serialize_xonly(),
+            &key_agg_ctx.aggregated_pubkey(),
+            &message,
+        );
+
+        let b2_diff = (b2 - b1).unwrap();
+        let b3_diff = (b3 - b1).unwrap();
+
+        let top = (s3 - s1) * b2_diff - (s2 - s1) * b3_diff;
+        let bottom = a * ((e3 - e1) * b2_diff + (e1 - e2) * b3_diff);
+        let extracted_key = (top / bottom.unwrap()).unwrap();
+
+        assert_eq!(extracted_key, alice_seckey);
     }
 }
