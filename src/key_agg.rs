@@ -1,4 +1,5 @@
 use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
+use std::collections::HashMap;
 
 use crate::errors::{DecodeError, KeyAggError, TweakError};
 use crate::{tagged_hashes, BinaryEncoding};
@@ -24,6 +25,10 @@ pub struct KeyAggContext {
 
     /// The component individual pubkeys in their original order.
     pub(crate) ordered_pubkeys: Vec<Point>,
+
+    /// A map of pubkeys to their indexes in the [`ordered_pubkeys`][Self::ordered_pubkeys]
+    /// field.
+    pub(crate) pubkey_indexes: HashMap<Point, usize>,
 
     /// Cached key aggregation coefficients of individual pubkeys, in the
     /// same order as `ordered_pubkeys`.
@@ -115,9 +120,18 @@ impl KeyAggContext {
 
         let aggregated_pubkey = MaybePoint::sum(tweaked_pubkeys).not_inf()?;
 
+        let pubkey_indexes = HashMap::from_iter(
+            ordered_pubkeys
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, pk)| (pk, i)),
+        );
+
         Ok(KeyAggContext {
             pubkey: aggregated_pubkey,
             ordered_pubkeys,
+            pubkey_indexes,
             key_coefficients,
             parity_acc: subtle::Choice::from(0),
             tweak_acc: MaybeScalar::Zero,
@@ -383,6 +397,15 @@ impl KeyAggContext {
     /// which this `KeyAggContext` was created with.
     pub fn pubkeys(&self) -> &[Point] {
         &self.ordered_pubkeys
+    }
+
+    /// Looks up the index of a given pubkey in the key aggregation group.
+    /// Returns `None` if the key is not a member of the group.
+    pub fn pubkey_index<P>(&self, pubkey: P) -> Option<usize>
+    where
+        Point: From<P>,
+    {
+        self.pubkey_indexes.get(&Point::from(pubkey)).copied()
     }
 
     /// Returns the public key for a given signer's index.
