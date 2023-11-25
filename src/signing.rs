@@ -12,14 +12,16 @@ use sha2::Digest as _;
 /// on this type.
 pub type PartialSignature = MaybeScalar;
 
-pub(crate) fn compute_challenge_hash_tweak(
-    final_nonce_x: &[u8; 32],
+/// Computes the challenge hash `e` for for a signature. You probably don't need
+/// to call this directly. Instead use [`sign_solo`] or [`sign_partial`].
+pub fn compute_challenge_hash_tweak(
+    final_nonce_xonly: &[u8; 32],
     aggregated_pubkey: &Point,
     message: impl AsRef<[u8]>,
 ) -> MaybeScalar {
     let hash: [u8; 32] = tagged_hashes::BIP0340_CHALLENGE_TAG_HASHER
         .clone()
-        .chain_update(final_nonce_x)
+        .chain_update(final_nonce_xonly)
         .chain_update(&aggregated_pubkey.serialize_xonly())
         .chain_update(message.as_ref())
         .finalize()
@@ -54,14 +56,14 @@ where
     // As a side-effect, looking up the cached key coefficient also confirms
     // the individual key is indeed part of the aggregated key.
     let key_coeff = key_agg_ctx
-        .key_coefficient(&pubkey)
+        .key_coefficient(pubkey)
         .ok_or(SigningError::UnknownKey)?;
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
 
-    let b = aggregated_nonce.nonce_coefficient(&aggregated_pubkey, &message);
-    let final_nonce = aggregated_nonce.final_nonce(b);
+    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
+    let final_nonce: Point = aggregated_nonce.final_nonce(b);
 
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
     // has odd parity.
@@ -118,13 +120,13 @@ where
     // As a side-effect, looking up the cached key coefficient also confirms
     // the individual key is indeed part of the aggregated key.
     let key_coeff = key_agg_ctx
-        .key_coefficient(&individual_pubkey)
+        .key_coefficient::<Point>(individual_pubkey)
         .ok_or(VerifyError::UnknownKey)?;
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let b = aggregated_nonce.nonce_coefficient(&aggregated_pubkey, &message);
-    let final_nonce = aggregated_nonce.final_nonce(b);
+    let b = aggregated_nonce.nonce_coefficient::<Point, MaybeScalar>(aggregated_pubkey, &message);
+    let final_nonce = aggregated_nonce.final_nonce::<MaybeScalar, Point>(b);
 
     let mut effective_nonce = individual_pubnonce.R1 + b * individual_pubnonce.R2;
 

@@ -530,8 +530,10 @@ impl SecNonce {
 /// or it can be constructed manually with [`PubNonce::new`].
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub struct PubNonce {
-    pub(crate) R1: Point,
-    pub(crate) R2: Point,
+    #[allow(missing_docs)]
+    pub R1: Point,
+    #[allow(missing_docs)]
+    pub R2: Point,
 }
 
 impl PubNonce {
@@ -561,8 +563,10 @@ impl PubNonce {
 /// required to provide their partial signatures.
 #[derive(Debug, Eq, PartialEq, Clone, Hash, Ord, PartialOrd)]
 pub struct AggNonce {
-    pub(crate) R1: MaybePoint,
-    pub(crate) R2: MaybePoint,
+    #[allow(missing_docs)]
+    pub R1: MaybePoint,
+    #[allow(missing_docs)]
+    pub R2: MaybePoint,
 }
 
 impl AggNonce {
@@ -619,32 +623,43 @@ impl AggNonce {
     }
 
     /// Computes the nonce coefficient `b`, used to create the final nonce and signatures.
-    pub(crate) fn nonce_coefficient(
-        &self,
-        aggregated_pubkey: &Point,
-        message: impl AsRef<[u8]>,
-    ) -> MaybeScalar {
+    ///
+    /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
+    /// [`sign_partial`] to create signatures.
+    pub fn nonce_coefficient<P, S>(&self, aggregated_pubkey: P, message: impl AsRef<[u8]>) -> S
+    where
+        S: From<MaybeScalar>,
+        Point: From<P>,
+    {
         let hash: [u8; 32] = tagged_hashes::MUSIG_NONCECOEF_TAG_HASHER
             .clone()
             .chain_update(&self.R1.serialize())
             .chain_update(&self.R2.serialize())
-            .chain_update(&aggregated_pubkey.serialize_xonly())
+            .chain_update(&Point::from(aggregated_pubkey).serialize_xonly())
             .chain_update(message.as_ref())
             .finalize()
             .into();
 
-        MaybeScalar::reduce_from(&hash)
+        S::from(MaybeScalar::reduce_from(&hash))
     }
 
     /// Computes the final public nonce point, published with the aggregated signature.
     /// If this point winds up at infinity (probably due to a mischevious signer), we
     /// instead return the generator point `G`.
-    pub(crate) fn final_nonce(&self, nonce_coeff: MaybeScalar) -> Point {
+    ///
+    /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
+    /// [`sign_partial`] to create signatures.
+    pub fn final_nonce<S, P>(&self, nonce_coeff: S) -> P
+    where
+        MaybeScalar: From<S>,
+        P: From<Point>,
+    {
+        let nonce_coeff = MaybeScalar::from(nonce_coeff);
         let aggnonce_sum = self.R1 + (nonce_coeff * self.R2);
-        match aggnonce_sum {
+        P::from(match aggnonce_sum {
             MaybePoint::Infinity => Point::generator(),
             MaybePoint::Valid(p) => p,
-        }
+        })
     }
 }
 
@@ -960,24 +975,25 @@ mod tests {
 
         // Alice gives Bob `(s1, s2, s3)`.
         // Bob can now compute Alice's secret key.
-        let a = key_agg_ctx.key_coefficient(&alice_pubkey).unwrap();
+        let a = key_agg_ctx.key_coefficient(alice_pubkey).unwrap();
+        let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
 
-        let b1 = aggnonce_1.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
-        let b2 = aggnonce_2.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
-        let b3 = aggnonce_3.nonce_coefficient(&key_agg_ctx.aggregated_pubkey(), &message);
+        let b1: MaybeScalar = aggnonce_1.nonce_coefficient(aggregated_pubkey, &message);
+        let b2: MaybeScalar = aggnonce_2.nonce_coefficient(aggregated_pubkey, &message);
+        let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, &message);
 
         let e1 = crate::compute_challenge_hash_tweak(
-            &aggnonce_1.final_nonce(b1).serialize_xonly(),
+            &aggnonce_1.final_nonce::<_, Point>(b1).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
         let e2 = crate::compute_challenge_hash_tweak(
-            &aggnonce_2.final_nonce(b2).serialize_xonly(),
+            &aggnonce_2.final_nonce::<_, Point>(b2).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
         let e3 = crate::compute_challenge_hash_tweak(
-            &aggnonce_3.final_nonce(b3).serialize_xonly(),
+            &aggnonce_3.final_nonce::<_, Point>(b3).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );

@@ -428,17 +428,12 @@ impl KeyAggContext {
     /// The key coefficient is computed by hashing the public key `X` with a hash of
     /// the ordered set of all public keys in the signing group, denoted `L`.
     /// `KeyAggContext` caches these coefficients on instantiation.
-    pub(crate) fn key_coefficient(&self, pubkey: &Point) -> Option<MaybeScalar> {
-        self.ordered_pubkeys
-            .iter()
-            .zip(&self.key_coefficients)
-            .find_map(|(candidate_pk, coeff)| {
-                if candidate_pk == pubkey {
-                    Some(*coeff)
-                } else {
-                    None
-                }
-            })
+    pub fn key_coefficient<P>(&self, pubkey: P) -> Option<MaybeScalar>
+    where
+        Point: From<P>,
+    {
+        let index = self.pubkey_index(pubkey)?;
+        Some(self.key_coefficients[index])
     }
 }
 

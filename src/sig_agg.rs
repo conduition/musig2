@@ -1,4 +1,4 @@
-use secp::G;
+use secp::{MaybeScalar, Point, G};
 
 use crate::errors::VerifyError;
 use crate::{
@@ -22,8 +22,10 @@ where
 {
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let b = aggregated_nonce.nonce_coefficient(&aggregated_pubkey, &message);
-    let final_nonce = aggregated_nonce.final_nonce(b).to_even_y();
+    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
+    let final_nonce = aggregated_nonce
+        .final_nonce::<MaybeScalar, Point>(b)
+        .to_even_y();
     let final_nonce_x_bytes = final_nonce.serialize_xonly();
 
     let e = compute_challenge_hash_tweak(&final_nonce_x_bytes, &aggregated_pubkey, &message);
