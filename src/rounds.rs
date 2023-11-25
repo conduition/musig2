@@ -95,15 +95,12 @@ impl FirstRound {
     /// session.
     ///
     /// Returns an error if the given signer index is out of range.
-    pub fn new<N>(
+    pub fn new(
         key_agg_ctx: KeyAggContext,
-        nonce_seed: N,
+        nonce_seed: impl Into<NonceSeed>,
         signer_index: usize,
         spices: SecNonceSpices<'_>,
-    ) -> Result<FirstRound, SignerIndexError>
-    where
-        NonceSeed: From<N>,
-    {
+    ) -> Result<FirstRound, SignerIndexError> {
         let signer_pubkey: Point = key_agg_ctx
             .get_pubkey(signer_index)
             .ok_or_else(|| SignerIndexError::new(signer_index, key_agg_ctx.pubkeys().len()))?;
@@ -174,9 +171,12 @@ impl FirstRound {
     ///
     /// For all partial signatures to be valid, everyone must naturally be signing the
     /// same message.
-    pub fn finalize<S, M>(self, seckey: S, message: M) -> Result<SecondRound<M>, RoundFinalizeError>
+    pub fn finalize<M>(
+        self,
+        seckey: impl Into<Scalar>,
+        message: M,
+    ) -> Result<SecondRound<M>, RoundFinalizeError>
     where
-        Scalar: From<S>,
         M: AsRef<[u8]>,
     {
         let pubnonces: Vec<PubNonce> = self.pubnonce_slots.finalize()?;
@@ -184,7 +184,7 @@ impl FirstRound {
 
         let partial_signature = sign_partial(
             &self.key_agg_ctx,
-            seckey,
+            seckey.into(),
             self.secnonce,
             &aggnonce,
             &message,
@@ -227,15 +227,13 @@ impl FirstRound {
     ///   can be verified with [`verify_single`][crate::verify_single]
     ///
     /// [See the top-level crate documentation for an example](.#single-aggregator).
-    pub fn sign_for_aggregator<S, M, T>(
+    pub fn sign_for_aggregator<T>(
         self,
-        seckey: S,
-        message: M,
+        seckey: impl Into<Scalar>,
+        message: impl AsRef<[u8]>,
         aggregated_nonce: &AggNonce,
     ) -> Result<T, SigningError>
     where
-        Scalar: From<S>,
-        M: AsRef<[u8]>,
         T: From<PartialSignature>,
     {
         sign_partial(
@@ -290,20 +288,17 @@ impl<M: AsRef<[u8]>> SecondRound<M> {
     /// signer at a given index. Returns an error if the signature is not valid, or if
     /// the given signer index is out of range, or if we already have a different partial
     /// signature on-file for that signer.
-    pub fn receive_signature<S>(
+    pub fn receive_signature(
         &mut self,
         signer_index: usize,
-        partial_signature: S,
-    ) -> Result<(), RoundContributionError>
-    where
-        PartialSignature: From<S>,
-    {
-        let partial_signature = PartialSignature::from(partial_signature);
+        partial_signature: impl Into<PartialSignature>,
+    ) -> Result<(), RoundContributionError> {
+        let partial_signature: PartialSignature = partial_signature.into();
         let signer_pubkey: Point = self.key_agg_ctx.get_pubkey(signer_index).ok_or_else(|| {
             RoundContributionError::out_of_range(signer_index, self.key_agg_ctx.pubkeys().len())
         })?;
 
-        verify_partial::<PartialSignature, _>(
+        verify_partial(
             &self.key_agg_ctx,
             partial_signature,
             &self.aggnonce,

@@ -87,12 +87,12 @@ impl KeyAggContext {
     /// key will be index `1`, and so on. It is important that the caller can
     /// clearly identify every signer, so that they know who to blame if
     /// a signing contribution (e.g. a partial signature) is invalid.
-    pub fn new<I, T>(pubkeys: I) -> Result<Self, KeyAggError>
+    pub fn new<I, P>(pubkeys: I) -> Result<Self, KeyAggError>
     where
-        I: IntoIterator<Item = T>,
-        Point: From<T>,
+        I: IntoIterator<Item = P>,
+        P: Into<Point>,
     {
-        let ordered_pubkeys: Vec<Point> = pubkeys.into_iter().map(Point::from).collect();
+        let ordered_pubkeys: Vec<Point> = pubkeys.into_iter().map(|p| p.into()).collect();
         assert!(ordered_pubkeys.len() > 0, "received empty set of pubkeys");
         assert!(
             ordered_pubkeys.len() <= u32::MAX as usize,
@@ -193,10 +193,7 @@ impl KeyAggContext {
     ///     aggregated_pubkey.to_string(),
     ///     "0385eb6101982e142dba553cae437d08a82880fe9a22889c997f8e415a61b7a2d5"
     /// );
-    pub fn with_tweak<T>(self, tweak: T, is_xonly: bool) -> Result<Self, TweakError>
-    where
-        Scalar: From<T>,
-    {
+    pub fn with_tweak(self, tweak: impl Into<Scalar>, is_xonly: bool) -> Result<Self, TweakError> {
         if is_xonly {
             self.with_xonly_tweak(tweak)
         } else {
@@ -205,12 +202,10 @@ impl KeyAggContext {
     }
 
     /// Iteratively applies tweaks to the aggregated pubkey. See [`KeyAggContext::with_tweak`].
-    pub fn with_tweaks<T>(
-        mut self,
-        tweaks: impl IntoIterator<Item = (T, bool)>,
-    ) -> Result<Self, TweakError>
+    pub fn with_tweaks<S, I>(mut self, tweaks: I) -> Result<Self, TweakError>
     where
-        Scalar: From<T>,
+        I: IntoIterator<Item = (S, bool)>,
+        S: Into<Scalar>,
     {
         for (tweak, is_xonly) in tweaks.into_iter() {
             self = self.with_tweak(tweak, is_xonly)?;
@@ -219,11 +214,8 @@ impl KeyAggContext {
     }
 
     /// Same as `self.with_tweak(tweak, false)`. See [`KeyAggContext::with_tweak`].
-    pub fn with_plain_tweak<T>(self, tweak: T) -> Result<Self, TweakError>
-    where
-        Scalar: From<T>,
-    {
-        let tweak = Scalar::from(tweak);
+    pub fn with_plain_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError> {
+        let tweak: Scalar = tweak.into();
 
         // Q' = Q + t*G
         let tweaked_pubkey = (self.pubkey + (tweak * G)).not_inf()?;
@@ -239,17 +231,14 @@ impl KeyAggContext {
     }
 
     /// Same as `self.with_tweak(tweak, true)`. See [`KeyAggContext::with_tweak`].
-    pub fn with_xonly_tweak<T>(self, tweak: T) -> Result<Self, TweakError>
-    where
-        Scalar: From<T>,
-    {
+    pub fn with_xonly_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError> {
         // if has_even_y(Q): g = 1  (Same as a plain tweak.)
         // else: g = n - 1
         if self.pubkey.has_even_y() {
             return self.with_plain_tweak(tweak);
         }
 
-        let tweak = Scalar::from(tweak);
+        let tweak: Scalar = tweak.into();
 
         // Q' = g*Q + t*G
         //
@@ -401,11 +390,8 @@ impl KeyAggContext {
 
     /// Looks up the index of a given pubkey in the key aggregation group.
     /// Returns `None` if the key is not a member of the group.
-    pub fn pubkey_index<P>(&self, pubkey: P) -> Option<usize>
-    where
-        Point: From<P>,
-    {
-        self.pubkey_indexes.get(&Point::from(pubkey)).copied()
+    pub fn pubkey_index(&self, pubkey: impl Into<Point>) -> Option<usize> {
+        self.pubkey_indexes.get(&pubkey.into()).copied()
     }
 
     /// Returns the public key for a given signer's index.
@@ -428,10 +414,7 @@ impl KeyAggContext {
     /// The key coefficient is computed by hashing the public key `X` with a hash of
     /// the ordered set of all public keys in the signing group, denoted `L`.
     /// `KeyAggContext` caches these coefficients on instantiation.
-    pub fn key_coefficient<P>(&self, pubkey: P) -> Option<MaybeScalar>
-    where
-        Point: From<P>,
-    {
+    pub fn key_coefficient(&self, pubkey: impl Into<Point>) -> Option<MaybeScalar> {
         let index = self.pubkey_index(pubkey)?;
         Some(self.key_coefficients[index])
     }

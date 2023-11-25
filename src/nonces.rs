@@ -86,12 +86,9 @@ impl<'ns> SecNonceSpices<'ns> {
     /// Add the secret key you intend to sign with to the spice rack.
     /// This doesn't _need_ to be the actual key you sign with, but
     /// for best efficacy that would be the recommended usage.
-    pub fn with_seckey<S>(self, seckey: S) -> SecNonceSpices<'ns>
-    where
-        Scalar: From<S>,
-    {
+    pub fn with_seckey(self, seckey: impl Into<Scalar>) -> SecNonceSpices<'ns> {
         SecNonceSpices {
-            seckey: Some(Scalar::from(seckey)),
+            seckey: Some(seckey.into()),
             ..self
         }
     }
@@ -215,10 +212,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// signing sessions, thus exposing their secret key.](
     #[doc = "https://medium.com/blockstream/musig-dn-schnorr-multisignatures\
              -with-verifiably-deterministic-nonces-27424b5df9d6#e3b6)"]
-    pub fn new<N>(nonce_seed: N) -> SecNonceBuilder<'snb>
-    where
-        NonceSeed: From<N>,
-    {
+    pub fn new(nonce_seed: impl Into<NonceSeed>) -> SecNonceBuilder<'snb> {
         let NonceSeed(nonce_seed_bytes) = nonce_seed.into();
         SecNonceBuilder {
             nonce_seed_bytes,
@@ -235,12 +229,9 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// The public key will be overwritten if [`SecNonceBuilder::with_seckey`]
     /// is used after this method.
-    pub fn with_pubkey<P>(self, pubkey: P) -> SecNonceBuilder<'snb>
-    where
-        Point: From<P>,
-    {
+    pub fn with_pubkey(self, pubkey: impl Into<Point>) -> SecNonceBuilder<'snb> {
         SecNonceBuilder {
-            pubkey: Some(Point::from(pubkey)),
+            pubkey: Some(pubkey.into()),
             ..self
         }
     }
@@ -251,11 +242,8 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// Overwrites any public key previously added by
     /// [`SecNonceBuilder::with_pubkey`], as we compute the public key
     /// of the given secret key and add it to the builder.
-    pub fn with_seckey<S>(self, seckey: S) -> SecNonceBuilder<'snb>
-    where
-        Scalar: From<S>,
-    {
-        let seckey = Scalar::from(seckey);
+    pub fn with_seckey(self, seckey: impl Into<Scalar>) -> SecNonceBuilder<'snb> {
+        let seckey: Scalar = seckey.into();
         SecNonceBuilder {
             seckey: Some(seckey),
             pubkey: Some(seckey * G),
@@ -274,12 +262,12 @@ impl<'snb> SecNonceBuilder<'snb> {
 
     /// Salt the resulting nonce with the aggregated public key which we expect to aggregate
     /// signatures for.
-    pub fn with_aggregated_pubkey<P>(self, aggregated_pubkey: P) -> SecNonceBuilder<'snb>
-    where
-        Point: From<P>,
-    {
+    pub fn with_aggregated_pubkey(
+        self,
+        aggregated_pubkey: impl Into<Point>,
+    ) -> SecNonceBuilder<'snb> {
         SecNonceBuilder {
-            aggregated_pubkey: Some(Point::from(aggregated_pubkey)),
+            aggregated_pubkey: Some(aggregated_pubkey.into()),
             ..self
         }
     }
@@ -435,23 +423,17 @@ pub struct SecNonce {
 
 impl SecNonce {
     /// Construct a new `SecNonce` from the given individual nonce values.
-    pub fn new<T>(k1: T, k2: T) -> SecNonce
-    where
-        Scalar: From<T>,
-    {
+    pub fn new<T: Into<Scalar>>(k1: T, k2: T) -> SecNonce {
         SecNonce {
-            k1: Scalar::from(k1),
-            k2: Scalar::from(k2),
+            k1: k1.into(),
+            k2: k2.into(),
         }
     }
 
     /// Constructs a new [`SecNonceBuilder`] from the given random nonce seed.
     ///
     /// See [`SecNonceBuilder::new`].
-    pub fn build<'snb, N>(nonce_seed: N) -> SecNonceBuilder<'snb>
-    where
-        NonceSeed: From<N>,
-    {
+    pub fn build<'snb>(nonce_seed: impl Into<NonceSeed>) -> SecNonceBuilder<'snb> {
         SecNonceBuilder::new(nonce_seed)
     }
 
@@ -471,18 +453,13 @@ impl SecNonce {
     /// to the nonce generation algorithm, use [`SecNonceBuilder`].
     ///
     /// Panics if the extra input length is greater than [`u32::MAX`].
-    pub fn generate<N, S, P>(
-        nonce_seed: N,
-        seckey: S,
-        aggregated_pubkey: P,
+    pub fn generate(
+        nonce_seed: impl Into<NonceSeed>,
+        seckey: impl Into<Scalar>,
+        aggregated_pubkey: impl Into<Point>,
         message: impl AsRef<[u8]>,
         extra_input: impl AsRef<[u8]>,
-    ) -> SecNonce
-    where
-        NonceSeed: From<N>,
-        Scalar: From<S>,
-        Point: From<P>,
-    {
+    ) -> SecNonce {
         Self::build(nonce_seed)
             .with_seckey(seckey)
             .with_aggregated_pubkey(aggregated_pubkey)
@@ -538,13 +515,10 @@ pub struct PubNonce {
 
 impl PubNonce {
     /// Construct a new `PubNonce` from the given pair of public nonce points.
-    pub fn new<T>(R1: T, R2: T) -> PubNonce
-    where
-        Point: From<T>,
-    {
+    pub fn new<T: Into<Point>>(R1: T, R2: T) -> PubNonce {
         PubNonce {
-            R1: Point::from(R1),
-            R2: Point::from(R2),
+            R1: R1.into(),
+            R2: R2.into(),
         }
     }
 }
@@ -571,13 +545,10 @@ pub struct AggNonce {
 
 impl AggNonce {
     /// Construct a new `AggNonce` from the given pair of public nonce points.
-    pub fn new<T>(R1: T, R2: T) -> AggNonce
-    where
-        MaybePoint: From<T>,
-    {
+    pub fn new<T: Into<MaybePoint>>(R1: T, R2: T) -> AggNonce {
         AggNonce {
-            R1: MaybePoint::from(R1),
-            R2: MaybePoint::from(R2),
+            R1: R1.into(),
+            R2: R2.into(),
         }
     }
 
@@ -626,16 +597,19 @@ impl AggNonce {
     ///
     /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
     /// [`sign_partial`] to create signatures.
-    pub fn nonce_coefficient<P, S>(&self, aggregated_pubkey: P, message: impl AsRef<[u8]>) -> S
+    pub fn nonce_coefficient<S>(
+        &self,
+        aggregated_pubkey: impl Into<Point>,
+        message: impl AsRef<[u8]>,
+    ) -> S
     where
         S: From<MaybeScalar>,
-        Point: From<P>,
     {
         let hash: [u8; 32] = tagged_hashes::MUSIG_NONCECOEF_TAG_HASHER
             .clone()
             .chain_update(&self.R1.serialize())
             .chain_update(&self.R2.serialize())
-            .chain_update(&Point::from(aggregated_pubkey).serialize_xonly())
+            .chain_update(&aggregated_pubkey.into().serialize_xonly())
             .chain_update(message.as_ref())
             .finalize()
             .into();
@@ -649,12 +623,11 @@ impl AggNonce {
     ///
     /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
     /// [`sign_partial`] to create signatures.
-    pub fn final_nonce<S, P>(&self, nonce_coeff: S) -> P
+    pub fn final_nonce<P>(&self, nonce_coeff: impl Into<MaybeScalar>) -> P
     where
-        MaybeScalar: From<S>,
         P: From<Point>,
     {
-        let nonce_coeff = MaybeScalar::from(nonce_coeff);
+        let nonce_coeff: MaybeScalar = nonce_coeff.into();
         let aggnonce_sum = self.R1 + (nonce_coeff * self.R2);
         P::from(match aggnonce_sum {
             MaybePoint::Infinity => Point::generator(),
@@ -983,17 +956,17 @@ mod tests {
         let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, &message);
 
         let e1 = crate::compute_challenge_hash_tweak(
-            &aggnonce_1.final_nonce::<_, Point>(b1).serialize_xonly(),
+            &aggnonce_1.final_nonce::<Point>(b1).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
         let e2 = crate::compute_challenge_hash_tweak(
-            &aggnonce_2.final_nonce::<_, Point>(b2).serialize_xonly(),
+            &aggnonce_2.final_nonce::<Point>(b2).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
         let e3 = crate::compute_challenge_hash_tweak(
-            &aggnonce_3.final_nonce::<_, Point>(b3).serialize_xonly(),
+            &aggnonce_3.final_nonce::<Point>(b3).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );

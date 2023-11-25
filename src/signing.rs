@@ -39,18 +39,17 @@ pub fn compute_challenge_hash_tweak(
 /// Returns an error if the given secret key does not belong to this
 /// `key_agg_ctx`. As an added safety, we also verify the partial signature
 /// before returning it.
-pub fn sign_partial<S, T>(
+pub fn sign_partial<T>(
     key_agg_ctx: &KeyAggContext,
-    seckey: S,
+    seckey: impl Into<Scalar>,
     secnonce: SecNonce,
     aggregated_nonce: &AggNonce,
     message: impl AsRef<[u8]>,
 ) -> Result<T, SigningError>
 where
-    Scalar: From<S>,
     T: From<PartialSignature>,
 {
-    let seckey = Scalar::from(seckey);
+    let seckey: Scalar = seckey.into();
     let pubkey = seckey.base_point_mul();
 
     // As a side-effect, looking up the cached key coefficient also confirms
@@ -102,31 +101,27 @@ where
 ///
 /// Returns an error if the given public key doesn't belong to the
 /// `key_agg_ctx`, or if the signature is invalid.
-pub fn verify_partial<S, P>(
+pub fn verify_partial(
     key_agg_ctx: &KeyAggContext,
-    partial_signature: S,
+    partial_signature: impl Into<PartialSignature>,
     aggregated_nonce: &AggNonce,
-    individual_pubkey: P,
+    individual_pubkey: impl Into<Point>,
     individual_pubnonce: &PubNonce,
     message: impl AsRef<[u8]>,
-) -> Result<(), VerifyError>
-where
-    MaybeScalar: From<S>,
-    Point: From<P>,
-{
-    let partial_signature = MaybeScalar::from(partial_signature);
-    let individual_pubkey = Point::from(individual_pubkey);
+) -> Result<(), VerifyError> {
+    let partial_signature: MaybeScalar = partial_signature.into();
+    let individual_pubkey: Point = individual_pubkey.into();
 
     // As a side-effect, looking up the cached key coefficient also confirms
     // the individual key is indeed part of the aggregated key.
     let key_coeff = key_agg_ctx
-        .key_coefficient::<Point>(individual_pubkey)
+        .key_coefficient(individual_pubkey)
         .ok_or(VerifyError::UnknownKey)?;
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let b = aggregated_nonce.nonce_coefficient::<Point, MaybeScalar>(aggregated_pubkey, &message);
-    let final_nonce = aggregated_nonce.final_nonce::<MaybeScalar, Point>(b);
+    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
+    let final_nonce: Point = aggregated_nonce.final_nonce(b);
 
     let mut effective_nonce = individual_pubnonce.R1 + b * individual_pubnonce.R2;
 
@@ -312,7 +307,7 @@ mod tests {
             let message = &vectors.messages[test_case.msg_index];
 
             assert_eq!(
-                sign_partial::<_, PartialSignature>(
+                sign_partial::<PartialSignature>(
                     &key_agg_ctx,
                     vectors.seckey,
                     secnonce.clone(),

@@ -23,19 +23,23 @@ use subtle::ConstantTimeEq as _;
 /// if all messages between co-signers are signed, then peers can assign blame
 /// to any dishonest signers by sharing a copy of their dishonest message, which
 /// will bear their signature.
-pub fn sign_solo<S, N, T>(seckey: S, message: impl AsRef<[u8]>, nonce_seed: N) -> T
+pub fn sign_solo<T>(
+    seckey: impl Into<Scalar>,
+    message: impl AsRef<[u8]>,
+    nonce_seed: impl Into<NonceSeed>,
+) -> T
 where
-    Scalar: From<S>,
-    NonceSeed: From<N>,
     T: From<LiftedSignature>,
 {
-    let seckey = Scalar::from(seckey);
+    let seckey: Scalar = seckey.into();
+    let nonce_seed: NonceSeed = nonce_seed.into();
+
     let pubkey = seckey.base_point_mul();
     let d = seckey.negate_if(pubkey.parity());
 
     let h: [u8; 32] = tagged_hashes::BIP0340_AUX_TAG_HASHER
         .clone()
-        .chain_update(&NonceSeed::from(nonce_seed).0)
+        .chain_update(&nonce_seed.0)
         .finalize()
         .into();
 
@@ -75,20 +79,15 @@ where
 /// `LiftedSignature`, and so on.
 ///
 /// Returns an error if the signature is invalid.
-pub fn verify_single<P, T>(
-    pubkey: P,
-    signature: T,
+pub fn verify_single(
+    pubkey: impl Into<Point>,
+    signature: impl TryInto<CompactSignature>,
     message: impl AsRef<[u8]>,
-) -> Result<(), VerifyError>
-where
-    Point: From<P>,
-    CompactSignature: TryFrom<T>,
-{
+) -> Result<(), VerifyError> {
     use VerifyError::BadSignature;
 
-    let pubkey = Point::from(pubkey).to_even_y(); // lift_x(x(P))
-    let CompactSignature { rx, s } =
-        CompactSignature::try_from(signature).map_err(|_| BadSignature)?;
+    let pubkey: Point = pubkey.into().to_even_y(); // lift_x(x(P))
+    let CompactSignature { rx, s } = signature.try_into().map_err(|_| BadSignature)?;
     let e = compute_challenge_hash_tweak(&rx, &pubkey, message);
 
     // Instead of the usual sG = R + eD schnorr equation, we swap things around
@@ -136,15 +135,12 @@ where
 #[cfg(feature = "rand")]
 pub fn verify_batch<P, M, T>(
     pubkeys: &[P],
-    messages: &[M],
+    messages: &[impl AsRef<[u8]>],
     raw_signatures: &[T],
 ) -> Result<(), VerifyError>
 where
-    P: Clone,
-    Point: From<P>,
-    M: AsRef<[u8]>,
-    T: Clone,
-    LiftedSignature: TryFrom<T>,
+    P: Clone + Into<Point>,
+    T: Clone + TryInto<LiftedSignature>,
 {
     use VerifyError::BadSignature;
 
@@ -154,14 +150,14 @@ where
 
     let pubkeys: Vec<Point> = pubkeys
         .iter()
-        .map(|pubkey| Point::from(pubkey.clone()))
+        .cloned()
+        .map(|pubkey| pubkey.into())
         .collect();
 
     let mut parsed_signatures = Vec::<LiftedSignature>::with_capacity(pubkeys.len());
     let mut challenge_tweaks = Vec::<MaybeScalar>::with_capacity(pubkeys.len());
     for (i, raw_signature) in raw_signatures.iter().enumerate() {
-        let parsed_signature =
-            LiftedSignature::try_from(raw_signature.clone()).map_err(|_| BadSignature)?;
+        let parsed_signature = raw_signature.clone().try_into().map_err(|_| BadSignature)?;
 
         let e = compute_challenge_hash_tweak(
             &parsed_signature.R.serialize_xonly(),

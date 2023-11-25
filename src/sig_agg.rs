@@ -17,22 +17,20 @@ pub fn aggregate_partial_signatures<S, T>(
     message: impl AsRef<[u8]>,
 ) -> Result<T, VerifyError>
 where
-    PartialSignature: From<S>,
+    S: Into<PartialSignature>,
     T: From<LiftedSignature>,
 {
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
     let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
-    let final_nonce = aggregated_nonce
-        .final_nonce::<MaybeScalar, Point>(b)
-        .to_even_y();
+    let final_nonce = aggregated_nonce.final_nonce::<Point>(b).to_even_y();
     let final_nonce_x_bytes = final_nonce.serialize_xonly();
 
     let e = compute_challenge_hash_tweak(&final_nonce_x_bytes, &aggregated_pubkey, &message);
 
     let aggregated_signature = partial_signatures
         .into_iter()
-        .map(PartialSignature::from)
+        .map(|sig| sig.into())
         .sum::<PartialSignature>()
         + (e * key_agg_ctx.tweak_acc).negate_if(aggregated_pubkey.parity());
 

@@ -37,14 +37,10 @@ pub struct CompactSignature {
 
 impl CompactSignature {
     /// Constructs a `CompactSignature` from a signature pair `(R, s)`.
-    pub fn new<P, S>(R: P, s: S) -> CompactSignature
-    where
-        Point: From<P>,
-        MaybeScalar: From<S>,
-    {
+    pub fn new(R: impl Into<Point>, s: impl Into<MaybeScalar>) -> CompactSignature {
         CompactSignature {
-            rx: Point::from(R).serialize_xonly(),
-            s: MaybeScalar::from(s),
+            rx: R.into().serialize_xonly(),
+            s: s.into(),
         }
     }
 
@@ -91,14 +87,10 @@ impl LiftedSignature {
     ///
     /// Accepts any types which convert to a [`secp::Point`] and
     /// [`secp::MaybeScalar`].
-    pub fn new<P, S>(R: P, s: S) -> LiftedSignature
-    where
-        Point: From<P>,
-        MaybeScalar: From<S>,
-    {
+    pub fn new(R: impl Into<Point>, s: impl Into<MaybeScalar>) -> LiftedSignature {
         LiftedSignature {
-            R: Point::from(R).to_even_y(),
-            s: MaybeScalar::from(s),
+            R: R.into().to_even_y(),
+            s: s.into(),
         }
     }
 
