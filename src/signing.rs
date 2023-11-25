@@ -14,11 +14,11 @@ pub type PartialSignature = MaybeScalar;
 
 /// Computes the challenge hash `e` for for a signature. You probably don't need
 /// to call this directly. Instead use [`sign_solo`] or [`sign_partial`].
-pub fn compute_challenge_hash_tweak(
+pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
     final_nonce_xonly: &[u8; 32],
     aggregated_pubkey: &Point,
     message: impl AsRef<[u8]>,
-) -> MaybeScalar {
+) -> S {
     let hash: [u8; 32] = tagged_hashes::BIP0340_CHALLENGE_TAG_HASHER
         .clone()
         .chain_update(final_nonce_xonly)
@@ -27,7 +27,7 @@ pub fn compute_challenge_hash_tweak(
         .finalize()
         .into();
 
-    MaybeScalar::reduce_from(&hash)
+    S::from(MaybeScalar::reduce_from(&hash))
 }
 
 /// Compute a partial signature on a message.
@@ -68,7 +68,7 @@ where
     // has odd parity.
     let d = seckey.negate_if(aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc);
 
-    let e =
+    let e: MaybeScalar =
         compute_challenge_hash_tweak(&final_nonce.serialize_xonly(), &aggregated_pubkey, &message);
 
     // if has_even_Y(R):
@@ -132,7 +132,7 @@ pub fn verify_partial(
 
     let challenge_parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
 
-    let e =
+    let e: MaybeScalar =
         compute_challenge_hash_tweak(&final_nonce.serialize_xonly(), &aggregated_pubkey, &message);
 
     // s * G == Re + (g * gacc * e * a * P)

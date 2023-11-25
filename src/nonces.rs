@@ -955,17 +955,17 @@ mod tests {
         let b2: MaybeScalar = aggnonce_2.nonce_coefficient(aggregated_pubkey, &message);
         let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, &message);
 
-        let e1 = crate::compute_challenge_hash_tweak(
+        let e1: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_1.final_nonce::<Point>(b1).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
-        let e2 = crate::compute_challenge_hash_tweak(
+        let e2: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_2.final_nonce::<Point>(b2).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,
         );
-        let e3 = crate::compute_challenge_hash_tweak(
+        let e3: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_3.final_nonce::<Point>(b3).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             &message,

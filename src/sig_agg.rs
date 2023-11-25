@@ -26,7 +26,8 @@ where
     let final_nonce = aggregated_nonce.final_nonce::<Point>(b).to_even_y();
     let final_nonce_x_bytes = final_nonce.serialize_xonly();
 
-    let e = compute_challenge_hash_tweak(&final_nonce_x_bytes, &aggregated_pubkey, &message);
+    let e: MaybeScalar =
+        compute_challenge_hash_tweak(&final_nonce_x_bytes, &aggregated_pubkey, &message);
 
     let aggregated_signature = partial_signatures
         .into_iter()

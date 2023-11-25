@@ -64,7 +64,7 @@ where
     let k = prenonce.negate_if(R.parity());
     let nonce_x_bytes = R.serialize_xonly();
 
-    let e = compute_challenge_hash_tweak(&nonce_x_bytes, &pubkey, message);
+    let e: MaybeScalar = compute_challenge_hash_tweak(&nonce_x_bytes, &pubkey, message);
 
     let s = k + e * d;
 
@@ -88,7 +88,7 @@ pub fn verify_single(
 
     let pubkey: Point = pubkey.into().to_even_y(); // lift_x(x(P))
     let CompactSignature { rx, s } = signature.try_into().map_err(|_| BadSignature)?;
-    let e = compute_challenge_hash_tweak(&rx, &pubkey, message);
+    let e: MaybeScalar = compute_challenge_hash_tweak(&rx, &pubkey, message);
 
     // Instead of the usual sG = R + eD schnorr equation, we swap things around
     // slightly, thus avoiding the need to lift the x-only nonce.
