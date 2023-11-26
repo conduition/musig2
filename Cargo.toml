@@ -8,6 +8,7 @@ readme = "README.md"
 license = "Unlicense"
 repository = "https://github.com/conduition/musig2"
 keywords = ["musig", "schnorr", "bitcoin", "multisignature", "musig2"]
+include = ["/src", "!/src/test_vectors", "*.md"]
 
 [dependencies]
 base16ct = { version = "0.2.0", default-features = false, features = ["alloc"] }
