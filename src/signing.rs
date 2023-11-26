@@ -1,7 +1,7 @@
 use crate::errors::{SigningError, VerifyError};
 use crate::{tagged_hashes, AggNonce, KeyAggContext, PubNonce, SecNonce};
 
-use secp::{MaybeScalar, Point, Scalar, G};
+use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
 use sha2::Digest as _;
 
@@ -31,25 +31,27 @@ pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
     S::from(MaybeScalar::reduce_from(&hash))
 }
 
-/// Compute a partial signature on a message.
+/// Compute a partial signature on a message encrypted under an adaptor point.
 ///
 /// The partial signature returned from this function is a potentially-zero
 /// scalar value which can then be passed to other signers for verification
 /// and aggregation.
 ///
+/// Once aggregated, the signature must be adapted with the discrete log
+/// (secret key) of `adaptor_point` for the signature to be considered valid.
+///
 /// Returns an error if the given secret key does not belong to this
 /// `key_agg_ctx`. As an added safety, we also verify the partial signature
 /// before returning it.
-pub fn sign_partial<T>(
+pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,
     secnonce: SecNonce,
     aggregated_nonce: &AggNonce,
+    adaptor_point: impl Into<MaybePoint>,
     message: impl AsRef<[u8]>,
-) -> Result<T, SigningError>
-where
-    T: From<PartialSignature>,
-{
+) -> Result<T, SigningError> {
+    let adaptor_point: MaybePoint = adaptor_point.into();
     let seckey: Scalar = seckey.into();
     let pubkey = seckey.base_point_mul();
 
@@ -64,28 +66,30 @@ where
 
     let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
     let final_nonce: Point = aggregated_nonce.final_nonce(b);
+    let adapted_nonce = final_nonce + adaptor_point;
 
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
     // has odd parity.
     let d = seckey.negate_if(aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc);
 
-    let e: MaybeScalar =
-        compute_challenge_hash_tweak(&final_nonce.serialize_xonly(), &aggregated_pubkey, &message);
+    let nonce_x_bytes = adapted_nonce.serialize_xonly();
+    let e: MaybeScalar = compute_challenge_hash_tweak(&nonce_x_bytes, &aggregated_pubkey, &message);
 
     // if has_even_Y(R):
     //   k = k1 + b*k2
     // else:
     //   k = (n-k1) + b(n-k2)
     //     = n - (k1 + b*k2)
-    let secnonce_sum = (secnonce.k1 + b * secnonce.k2).negate_if(final_nonce.parity());
+    let secnonce_sum = (secnonce.k1 + b * secnonce.k2).negate_if(adapted_nonce.parity());
 
-    // s = nonce + e*a*d
+    // s = k + e*a*d
     let partial_signature = secnonce_sum + (e * key_coeff * d);
 
-    verify_partial(
+    verify_partial_adaptor(
         key_agg_ctx,
         partial_signature,
         aggregated_nonce,
+        adaptor_point,
         pubkey,
         &pubnonce,
         &message,
@@ -94,18 +98,50 @@ where
     Ok(T::from(partial_signature))
 }
 
-/// Verify a partial signature, usually from an untrusted co-signer.
+/// Compute a partial signature on a message.
 ///
-/// If `verify_partial` succeeds for every signature in
+/// The partial signature returned from this function is a potentially-zero
+/// scalar value which can then be passed to other signers for verification
+/// and aggregation.
+///
+/// Returns an error if the given secret key does not belong to this
+/// `key_agg_ctx`. As an added safety, we also verify the partial signature
+/// before returning it.
+///
+/// This is equivalent to invoking [`sign_partial_adaptor`], but passing
+/// [`MaybePoint::Infinity`] as the adaptor point.
+pub fn sign_partial<T: From<PartialSignature>>(
+    key_agg_ctx: &KeyAggContext,
+    seckey: impl Into<Scalar>,
+    secnonce: SecNonce,
+    aggregated_nonce: &AggNonce,
+    message: impl AsRef<[u8]>,
+) -> Result<T, SigningError> {
+    sign_partial_adaptor(
+        key_agg_ctx,
+        seckey,
+        secnonce,
+        aggregated_nonce,
+        MaybePoint::Infinity,
+        message,
+    )
+}
+
+/// Verify a partial signature, usually from an untrusted co-signer,
+/// which has been encrypted under an adaptor point.
+///
+/// If `verify_partial_adaptor` succeeds for every signature in
 /// a signing session, the resulting aggregated signature is guaranteed
-/// to be valid.
+/// to be valid once it is adapted with the discrete log (secret key)
+/// of `adaptor_point`.
 ///
 /// Returns an error if the given public key doesn't belong to the
 /// `key_agg_ctx`, or if the signature is invalid.
-pub fn verify_partial(
+pub fn verify_partial_adaptor(
     key_agg_ctx: &KeyAggContext,
     partial_signature: impl Into<PartialSignature>,
     aggregated_nonce: &AggNonce,
+    adaptor_point: impl Into<MaybePoint>,
     individual_pubkey: impl Into<Point>,
     individual_pubnonce: &PubNonce,
     message: impl AsRef<[u8]>,
@@ -123,20 +159,20 @@ pub fn verify_partial(
 
     let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
     let final_nonce: Point = aggregated_nonce.final_nonce(b);
+    let adapted_nonce = final_nonce + adaptor_point.into();
 
     let mut effective_nonce = individual_pubnonce.R1 + b * individual_pubnonce.R2;
 
-    // Don't need constant time ops here as final_nonce is public.
-    if final_nonce.has_odd_y() {
+    // Don't need constant time ops here as adapted_nonce is public.
+    if adapted_nonce.has_odd_y() {
         effective_nonce = -effective_nonce;
     }
 
+    let nonce_x_bytes = adapted_nonce.serialize_xonly();
+    let e: MaybeScalar = compute_challenge_hash_tweak(&nonce_x_bytes, &aggregated_pubkey, &message);
+
+    // s * G == R + (g * gacc * e * a * P)
     let challenge_parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
-
-    let e: MaybeScalar =
-        compute_challenge_hash_tweak(&final_nonce.serialize_xonly(), &aggregated_pubkey, &message);
-
-    // s * G == Re + (g * gacc * e * a * P)
     let challenge_point = (key_coeff * e * individual_pubkey).negate_if(challenge_parity);
 
     if partial_signature * G != effective_nonce + challenge_point {
@@ -144,6 +180,36 @@ pub fn verify_partial(
     }
 
     Ok(())
+}
+
+/// Verify a partial signature, usually from an untrusted co-signer.
+///
+/// If `verify_partial` succeeds for every signature in
+/// a signing session, the resulting aggregated signature is guaranteed
+/// to be valid.
+///
+/// This function is effectively the same as invoking [`verify_partial_adaptor`]
+/// but passing [`MaybePoint::Infinity`] as the adaptor point.
+///
+/// Returns an error if the given public key doesn't belong to the
+/// `key_agg_ctx`, or if the signature is invalid.
+pub fn verify_partial(
+    key_agg_ctx: &KeyAggContext,
+    partial_signature: impl Into<PartialSignature>,
+    aggregated_nonce: &AggNonce,
+    individual_pubkey: impl Into<Point>,
+    individual_pubnonce: &PubNonce,
+    message: impl AsRef<[u8]>,
+) -> Result<(), VerifyError> {
+    verify_partial_adaptor(
+        key_agg_ctx,
+        partial_signature,
+        aggregated_nonce,
+        MaybePoint::Infinity,
+        individual_pubkey,
+        individual_pubnonce,
+        message,
+    )
 }
 
 #[cfg(test)]
@@ -264,6 +330,18 @@ mod tests {
                 test_index,
             );
 
+            let adaptor_secret = MaybeScalar::Valid(vectors.seckey);
+            let adaptor_point = adaptor_secret * G;
+            let partial_adaptor_signature: PartialSignature = sign_partial_adaptor(
+                &key_agg_ctx,
+                vectors.seckey,
+                secnonce.clone(),
+                &aggregated_nonce,
+                adaptor_point,
+                message,
+            )
+            .expect("error during partial adaptor signing");
+
             let public_nonces: Vec<PubNonce> = test_case
                 .nonce_indices
                 .into_iter()
@@ -282,6 +360,17 @@ mod tests {
                 &key_agg_ctx,
                 partial_signature,
                 &aggregated_nonce,
+                signer_pubkey,
+                &public_nonces[test_case.signer_index],
+                message,
+            )
+            .expect("failed to verify valid partial signature");
+
+            verify_partial_adaptor(
+                &key_agg_ctx,
+                partial_adaptor_signature,
+                &aggregated_nonce,
+                adaptor_point,
                 signer_pubkey,
                 &public_nonces[test_case.signer_index],
                 message,
