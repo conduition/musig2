@@ -13,7 +13,8 @@ use sha2::Digest as _;
 pub type PartialSignature = MaybeScalar;
 
 /// Computes the challenge hash `e` for for a signature. You probably don't need
-/// to call this directly. Instead use [`sign_solo`] or [`sign_partial`].
+/// to call this directly. Instead use [`sign_solo`][crate::sign_solo] or
+/// [`sign_partial`][crate::sign_partial].
 pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
     final_nonce_xonly: &[u8; 32],
     aggregated_pubkey: &Point,

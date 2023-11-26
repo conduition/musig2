@@ -595,8 +595,9 @@ impl AggNonce {
 
     /// Computes the nonce coefficient `b`, used to create the final nonce and signatures.
     ///
-    /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
-    /// [`sign_partial`] to create signatures.
+    /// Most use-cases will not need to invoke this method. Instead use
+    /// [`sign_solo`][crate::sign_solo] or [`sign_partial`][crate::sign_partial]
+    /// to create signatures.
     pub fn nonce_coefficient<S>(
         &self,
         aggregated_pubkey: impl Into<Point>,
@@ -621,8 +622,9 @@ impl AggNonce {
     /// If this point winds up at infinity (probably due to a mischevious signer), we
     /// instead return the generator point `G`.
     ///
-    /// Most use-cases will not need to invoke this method. Instead use [`sign_solo`] or
-    /// [`sign_partial`] to create signatures.
+    /// Most use-cases will not need to invoke this method. Instead use
+    /// [`sign_solo`][crate::sign_solo] or [`sign_partial`][crate::sign_partial]
+    /// to create signatures.
     pub fn final_nonce<P>(&self, nonce_coeff: impl Into<MaybeScalar>) -> P
     where
         P: From<Point>,
