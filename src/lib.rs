@@ -23,7 +23,7 @@ pub mod adaptor {
     pub use crate::bip340::sign_solo_adaptor as sign_solo;
     pub use crate::bip340::verify_single_adaptor as verify_single;
     pub use crate::sig_agg::aggregate_partial_adaptor_signatures as aggregate_partial_signatures;
-    pub use crate::signature::AdaptorSignature as Signature;
+    pub use crate::signature::AdaptorSignature;
     pub use crate::signing::sign_partial_adaptor as sign_partial;
     pub use crate::signing::verify_partial_adaptor as verify_partial;
 }
