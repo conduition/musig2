@@ -7,7 +7,8 @@ use crate::{
 };
 
 /// Aggregate a collection of partial adaptor signatures together into a final
-/// signature on a given `message`, under the aggregated public key in `key_agg_ctx`.
+/// adaptor signature on a given `message`, under the aggregated public key in
+/// `key_agg_ctx`.
 ///
 /// The resulting signature will not be valid unless adapted with the discrete log
 /// of the `adaptor_point`.

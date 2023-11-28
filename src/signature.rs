@@ -103,13 +103,6 @@ impl LiftedSignature {
     /// Encrypts an existing valid signature by subtracting a given adaptor secret.
     pub fn encrypt(&self, adaptor_secret: impl Into<Scalar>) -> AdaptorSignature {
         AdaptorSignature::new(self.R, self.s).encrypt(adaptor_secret)
-
-        // let adaptor_secret: Scalar = adaptor_secret.into();
-
-        // AdaptorSignature {
-        //     R: self.R - adaptor_secret * G,
-        //     s: self.s - adaptor_secret,
-        // }
     }
 
     /// Unzip this signature pair into a tuple of any two types
@@ -146,8 +139,8 @@ impl LiftedSignature {
 
 /// A representation of a Schnorr adaptor signature point+scalar pair `(R', s')`.
 ///
-/// Differs from [`LiftedSignature`] in that an `AdaptorSignature`
-/// is explicitly modified with by specific scalar offset, so that
+/// Differs from [`LiftedSignature`] in that an `AdaptorSignature` is explicitly
+/// modified with by specific scalar offset called the _adaptor secret,_ so that
 /// only by learning the adaptor secret can its holder convert it
 /// into a valid BIP340 signature.
 ///
@@ -209,7 +202,7 @@ impl AdaptorSignature {
     }
 
     /// Using a decrypted signature `final_sig`, this method computes the
-    /// adaptor secret  used to encrypt this signature.
+    /// adaptor secret used to encrypt this signature.
     ///
     /// Returns `None` if `final_sig` is not related to this adaptor signature.
     pub fn reveal_secret<S>(&self, final_sig: &LiftedSignature) -> Option<S>
