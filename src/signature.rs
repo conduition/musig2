@@ -1,4 +1,4 @@
-use secp::{MaybeScalar, Point};
+use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
 use crate::errors::DecodeError;
 use crate::BinaryEncoding;
@@ -100,6 +100,11 @@ impl LiftedSignature {
         CompactSignature::new(self.R, self.s)
     }
 
+    /// Encrypts an existing valid signature by subtracting a given adaptor secret.
+    pub fn encrypt(&self, adaptor_secret: impl Into<Scalar>) -> AdaptorSignature {
+        AdaptorSignature::new(self.R, self.s).encrypt(adaptor_secret)
+    }
+
     /// Unzip this signature pair into a tuple of any two types
     /// which convert from [`secp::Point`] and [`secp::MaybeScalar`].
     ///
@@ -126,6 +131,118 @@ impl LiftedSignature {
     pub fn unzip<P, S>(&self) -> (P, S)
     where
         P: From<Point>,
+        S: From<MaybeScalar>,
+    {
+        (P::from(self.R), S::from(self.s))
+    }
+}
+
+/// A representation of a Schnorr adaptor signature point+scalar pair `(R', s')`.
+///
+/// Differs from [`LiftedSignature`] in that an `AdaptorSignature` is explicitly
+/// modified with by specific scalar offset called the _adaptor secret,_ so that
+/// only by learning the adaptor secret can its holder convert it
+/// into a valid BIP340 signature.
+///
+/// Since `AdaptorSignature` is not meant for on-chain consensus, the nonce
+/// point `R` can have either even or odd parity, and so `AdaptorSignature`
+/// is encoded as a 65 byte array which includes the compressed `R` point.
+///
+/// To learn more about adaptor signatures and how to use them, see the docs
+/// in [the adaptor module][crate::adaptor].
+///
+/// To construct an `AdaptorSignature`, use [`LiftedSignature::encrypt`],
+/// [`adaptor::sign_solo`][crate::adaptor::sign_solo], or
+/// [`adaptor::aggregate_partial_signatures`][crate::adaptor::aggregate_partial_signatures].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AdaptorSignature {
+    pub(crate) R: MaybePoint,
+    pub(crate) s: MaybeScalar,
+}
+
+impl AdaptorSignature {
+    /// Constructs a new adaptor signature from a nonce and scalar pair.
+    ///
+    /// Accepts any types which convert to a [`secp::MaybePoint`] and
+    /// [`secp::MaybeScalar`].
+    pub fn new(R: impl Into<MaybePoint>, s: impl Into<MaybeScalar>) -> AdaptorSignature {
+        AdaptorSignature {
+            R: R.into(),
+            s: s.into(),
+        }
+    }
+
+    /// Adapts the signature into a lifted signature with a given adaptor secret.
+    ///
+    /// Returns `None` if the nonce resulting from adding the adaptor point is the
+    /// point at infinity.
+    ///
+    /// The resulting signature is not guaranteed to be valid unless the
+    ///`AdaptorSignature` was already verified with
+    /// [`adaptor::verify_single`][crate::adaptor::verify_single].
+    /// If not, make sure to verify the resulting lifted signature
+    /// using [`verify_single`][crate::verify_single].
+    pub fn adapt<T: From<LiftedSignature>>(
+        &self,
+        adaptor_secret: impl Into<MaybeScalar>,
+    ) -> Option<T> {
+        let adaptor_secret: MaybeScalar = adaptor_secret.into();
+        let adapted_nonce = (self.R + adaptor_secret * G).into_option()?;
+        let adapted_sig = self.s + adaptor_secret.negate_if(adapted_nonce.parity());
+        Some(T::from(LiftedSignature::new(adapted_nonce, adapted_sig)))
+    }
+
+    /// Encrypts an existing adaptor signature again, by subtracting another adaptor secret.
+    pub fn encrypt(&self, adaptor_secret: impl Into<Scalar>) -> AdaptorSignature {
+        let adaptor_secret: Scalar = adaptor_secret.into();
+        AdaptorSignature {
+            R: self.R - adaptor_secret * G,
+            s: self.s - adaptor_secret,
+        }
+    }
+
+    /// Using a decrypted signature `final_sig`, this method computes the
+    /// adaptor secret used to encrypt this signature.
+    ///
+    /// Returns `None` if `final_sig` is not related to this adaptor signature.
+    pub fn reveal_secret<S>(&self, final_sig: &LiftedSignature) -> Option<S>
+    where
+        S: From<MaybeScalar>,
+    {
+        let t = final_sig.s - self.s;
+        let T = t * G;
+
+        if T == final_sig.R - self.R {
+            Some(S::from(t))
+        } else if T == final_sig.R + self.R {
+            Some(S::from(-t))
+        } else {
+            None
+        }
+    }
+
+    /// Unzip this signature pair into a tuple of any two types
+    /// which convert from [`secp::MaybePoint`] and [`secp::MaybeScalar`].
+    ///
+    /// ```
+    /// // This allows us to use `R` as a variable name.
+    /// #![allow(non_snake_case)]
+    ///
+    /// let signature = "02c1de0db357c5d780c69624d0ab266a3b6866301adc85b66cc9fce26d2a60b72c\
+    ///                  659c15ed9bc81df681e1e0607cf44cc08e77396f74359de1e6e6ff365ca94dae"
+    ///     .parse::<musig2::AdaptorSignature>()
+    ///     .unwrap();
+    ///
+    /// let (R, s): ([u8; 33], [u8; 32]) = signature.unzip();
+    /// let (R, s): (secp::MaybePoint, secp::MaybeScalar) = signature.unzip();
+    /// # #[cfg(feature = "k256")]
+    /// # {
+    /// let (R, s): (k256::AffinePoint, k256::Scalar) = signature.unzip();
+    /// # }
+    /// ```
+    pub fn unzip<P, S>(&self) -> (P, S)
+    where
+        P: From<MaybePoint>,
         S: From<MaybeScalar>,
     {
         (P::from(self.R), S::from(self.s))
@@ -178,11 +295,37 @@ mod encodings {
         }
     }
 
+    impl BinaryEncoding for AdaptorSignature {
+        type Serialized = [u8; 65];
+
+        /// Serializes the signature to a compressed 65-byte encoding,
+        /// including the compressed `R` point and the serialized `s` scalar.
+        fn to_bytes(&self) -> Self::Serialized {
+            let mut serialized = [0u8; 65];
+            serialized[..33].clone_from_slice(&self.R.serialize());
+            serialized[33..].clone_from_slice(&self.s.serialize());
+            serialized
+        }
+
+        /// Deserialize an adaptor signature from a byte slice. This
+        /// slice must be exactly 65 bytes long.
+        fn from_bytes(signature_bytes: &[u8]) -> Result<Self, DecodeError<Self>> {
+            if signature_bytes.len() != 65 {
+                return Err(DecodeError::bad_length(signature_bytes.len()));
+            }
+            let R = MaybePoint::try_from(&signature_bytes[..33])?;
+            let s = MaybeScalar::try_from(&signature_bytes[33..])?;
+            Ok(AdaptorSignature { R, s })
+        }
+    }
+
     impl_encoding_traits!(CompactSignature, SCHNORR_SIGNATURE_SIZE);
     impl_encoding_traits!(LiftedSignature, SCHNORR_SIGNATURE_SIZE);
+    impl_encoding_traits!(AdaptorSignature, 65);
 
     impl_hex_display!(CompactSignature);
     impl_hex_display!(LiftedSignature);
+    impl_hex_display!(AdaptorSignature);
 }
 
 mod internal_conversions {

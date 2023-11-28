@@ -1,10 +1,10 @@
 use crate::errors::{RoundContributionError, RoundFinalizeError, SignerIndexError, SigningError};
 use crate::{
-    aggregate_partial_signatures, sign_partial, verify_partial, AggNonce, KeyAggContext,
-    LiftedSignature, NonceSeed, PartialSignature, PubNonce, SecNonce, SecNonceSpices,
+    sign_partial, AdaptorSignature, AggNonce, KeyAggContext, LiftedSignature, NonceSeed,
+    PartialSignature, PubNonce, SecNonce, SecNonceSpices,
 };
 
-use secp::{Point, Scalar};
+use secp::{MaybePoint, MaybeScalar, Point, Scalar};
 
 /// A simple state-machine which receives values of a given type `T` and
 /// stores them in a vector at given indices. Returns an error if attempting
@@ -171,6 +171,10 @@ impl FirstRound {
     ///
     /// For all partial signatures to be valid, everyone must naturally be signing the
     /// same message.
+    ///
+    /// This method is effectively the same as invoking
+    /// [`finalize_adaptor`][Self::finalize_adaptor], but passing [`MaybePoint::Infinity`]
+    /// as the adaptor point.
     pub fn finalize<M>(
         self,
         seckey: impl Into<Scalar>,
@@ -179,14 +183,50 @@ impl FirstRound {
     where
         M: AsRef<[u8]>,
     {
+        self.finalize_adaptor(seckey, MaybePoint::Infinity, message)
+    }
+
+    /// Finishes the first round once all nonces are received, combining nonces
+    /// into an aggregated nonce, and creating a partial adaptor signature using
+    /// `seckey` on a given `message`, both of which are stored in the returned
+    /// `SecondRound`.
+    ///
+    /// The `adaptor_point` is used to verifiably encrypt the partial signature, so that
+    /// the final aggregated signature will need to be adapted with the discrete log
+    /// of `adaptor_point` before the signature can be considered valid. All signers
+    /// must agree on and use the same adaptor point for the final signature to be valid.
+    ///
+    /// See [`SecondRound::aggregated_nonce`] to access the aggregated nonce,
+    /// and [`SecondRound::our_signature`] to access the partial signature.
+    ///
+    /// This method intentionally consumes the `FirstRound`, to avoid accidentally
+    /// reusing a secret-nonce.
+    ///
+    /// This method should only be invoked once [`is_complete`][Self::is_complete]
+    /// returns true, otherwise it will fail. Can also return an error if partial
+    /// signing fails, probably because the wrong secret key was given.
+    ///
+    /// For all partial signatures to be valid, everyone must naturally be signing the
+    /// same message.
+    pub fn finalize_adaptor<M>(
+        self,
+        seckey: impl Into<Scalar>,
+        adaptor_point: impl Into<MaybePoint>,
+        message: M,
+    ) -> Result<SecondRound<M>, RoundFinalizeError>
+    where
+        M: AsRef<[u8]>,
+    {
+        let adaptor_point: MaybePoint = adaptor_point.into();
         let pubnonces: Vec<PubNonce> = self.pubnonce_slots.finalize()?;
         let aggnonce = pubnonces.iter().sum();
 
-        let partial_signature = sign_partial(
+        let partial_signature = crate::adaptor::sign_partial(
             &self.key_agg_ctx,
-            seckey.into(),
+            seckey,
             self.secnonce,
             &aggnonce,
+            adaptor_point,
             &message,
         )?;
 
@@ -200,6 +240,7 @@ impl FirstRound {
             signer_index: self.signer_index,
             pubnonces,
             aggnonce,
+            adaptor_point,
             message,
             partial_signature_slots,
         };
@@ -227,6 +268,10 @@ impl FirstRound {
     ///   can be verified with [`verify_single`][crate::verify_single]
     ///
     /// [See the top-level crate documentation for an example](.#single-aggregator).
+    ///
+    /// Invoking this method is essentially the same as invoking
+    /// [`sign_for_aggregator_adaptor`][Self::sign_for_aggregator_adaptor],
+    /// but passing [`MaybePoint::Infinity`] as the adaptor point.
     pub fn sign_for_aggregator<T>(
         self,
         seckey: impl Into<Scalar>,
@@ -244,6 +289,48 @@ impl FirstRound {
             &message,
         )
     }
+
+    /// As an alternative to collecting nonces and partial signatures one-by-one from
+    /// everyone in the group, signers can opt instead to nominate an _aggregator node_
+    /// whose duty is to collect nonces and signatures from all other signers, and
+    /// then broadcast the aggregated signature once they receive all partial signatures.
+    /// Doing this dramatically decreases the number of network round-trips required
+    /// for large groups of signers, and doesn't require any trust in the aggregator node
+    /// beyond the possibility that they may refuse to reveal the final signature.
+    ///
+    /// To use this API with a single aggregator node:
+    ///
+    /// - The group must agree on an `adaptor_point` which will be used to encrypt signatures.
+    /// - Instantiate the `FirstRound`.
+    /// - Send the output of [`FirstRound::our_public_nonce`] to the aggregator.
+    /// - The aggregator node should reply with an [`AggNonce`].
+    /// - Once you receive the aggregated nonce, use [`FirstRound::sign_for_aggregator_adaptor`]
+    ///   instead of [`finalize_adaptor`][Self::finalize_adaptor] to consume the `FirstRound`
+    ///   and return a partial signature.
+    /// - Send this partial signature to the aggregator.
+    /// - The aggregator (if they are honest) will reply with the aggregated Schnorr signature,
+    ///   which can be verified with [`adaptor::verify_single`][crate::adaptor::verify_single]
+    ///
+    /// [See the top-level crate documentation for an example](.#single-aggregator).
+    pub fn sign_for_aggregator_adaptor<T>(
+        self,
+        seckey: impl Into<Scalar>,
+        adaptor_point: impl Into<MaybePoint>,
+        message: impl AsRef<[u8]>,
+        aggregated_nonce: &AggNonce,
+    ) -> Result<T, SigningError>
+    where
+        T: From<PartialSignature>,
+    {
+        crate::adaptor::sign_partial(
+            &self.key_agg_ctx,
+            seckey,
+            self.secnonce,
+            aggregated_nonce,
+            adaptor_point,
+            &message,
+        )
+    }
 }
 
 /// A state machine to manage second round of a MuSig2 signing session.
@@ -256,6 +343,7 @@ pub struct SecondRound<M: AsRef<[u8]>> {
     signer_index: usize,
     pubnonces: Vec<PubNonce>,
     aggnonce: AggNonce,
+    adaptor_point: MaybePoint,
     message: M,
     partial_signature_slots: Slots<PartialSignature>,
 }
@@ -298,10 +386,11 @@ impl<M: AsRef<[u8]>> SecondRound<M> {
             RoundContributionError::out_of_range(signer_index, self.key_agg_ctx.pubkeys().len())
         })?;
 
-        verify_partial(
+        crate::adaptor::verify_partial(
             &self.key_agg_ctx,
             partial_signature,
             &self.aggnonce,
+            self.adaptor_point,
             signer_pubkey,
             &self.pubnonces[signer_index],
             &self.message,
@@ -323,24 +412,46 @@ impl<M: AsRef<[u8]>> SecondRound<M> {
     /// combining signatures into an aggregated signature on the `message`
     /// given to [`FirstRound::finalize`].
     ///
-    /// See [`SecondRound::aggregated_nonce`] to access the aggregated nonce,
-    /// and [`SecondRound::our_signature`] to access the partial signature.
+    /// This method should only be invoked once [`is_complete`][Self::is_complete]
+    /// returns true, otherwise it will fail. Can also return an error if partial
+    /// signature aggregation fails, but if [`receive_signature`][Self::receive_signature]
+    /// didn't complain, then finalizing will succeed with overwhelming probability.
     ///
-    /// This method intentionally consumes the `FirstRound`, to avoid accidentally
-    /// reusing a secret-nonce.
+    /// If the [`FirstRound`] was finalized with [`FirstRound::finalize_adaptor`], then
+    /// the second round must also be finalized with [`SecondRound::finalize_adaptor`],
+    /// otherwise this method will return [`RoundFinalizeError::InvalidAggregatedSignature`].
+    pub fn finalize<T>(self) -> Result<T, RoundFinalizeError>
+    where
+        T: From<LiftedSignature>,
+    {
+        let sig = self
+            .finalize_adaptor::<AdaptorSignature>()?
+            .adapt(MaybeScalar::Zero)
+            .expect("finalizing with empty adaptor should never result in an adaptor failure");
+
+        Ok(T::from(sig))
+    }
+
+    /// Finishes the second round once all partial adaptor signatures are received,
+    /// combining signatures into an aggregated adaptor signature on the `message`
+    /// given to [`FirstRound::finalize`].
+    ///
+    /// To make this signature valid, it must then be adapted with the discrete log
+    /// of the adaptor point given to [`FirstRound::finalize`].
     ///
     /// This method should only be invoked once [`is_complete`][Self::is_complete]
     /// returns true, otherwise it will fail. Can also return an error if partial
     /// signature aggregation fails, but if [`receive_signature`][Self::receive_signature]
     /// didn't complain, then finalizing will succeed with overwhelming probability.
-    pub fn finalize<T>(self) -> Result<T, RoundFinalizeError>
-    where
-        T: From<LiftedSignature>,
-    {
+    ///
+    /// If this signing session did not use adaptor signatures, the signature returned by
+    /// this method will be a valid signature which can be adapted with `MaybeScalar::Zero`.
+    pub fn finalize_adaptor<T>(self) -> Result<AdaptorSignature, RoundFinalizeError> {
         let partial_signatures: Vec<PartialSignature> = self.partial_signature_slots.finalize()?;
-        let final_signature = aggregate_partial_signatures(
+        let final_signature = crate::adaptor::aggregate_partial_signatures(
             &self.key_agg_ctx,
             &self.aggnonce,
+            self.adaptor_point,
             partial_signatures,
             &self.message,
         )?;

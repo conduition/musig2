@@ -18,17 +18,27 @@ mod sig_agg;
 mod signature;
 mod signing;
 
+#[doc = include_str!("../doc/adaptor_signatures.md")]
+pub mod adaptor {
+    pub use crate::bip340::sign_solo_adaptor as sign_solo;
+    pub use crate::bip340::verify_single_adaptor as verify_single;
+    pub use crate::sig_agg::aggregate_partial_adaptor_signatures as aggregate_partial_signatures;
+    pub use crate::signature::AdaptorSignature;
+    pub use crate::signing::sign_partial_adaptor as sign_partial;
+    pub use crate::signing::verify_partial_adaptor as verify_partial;
+}
+
 pub mod errors;
 pub mod tagged_hashes;
 
 pub use binary_encoding::*;
-pub use bip340::*;
+pub use bip340::{sign_solo, verify_single};
 pub use key_agg::*;
 pub use nonces::*;
 pub use rounds::*;
-pub use sig_agg::*;
+pub use sig_agg::aggregate_partial_signatures;
 pub use signature::*;
-pub use signing::*;
+pub use signing::{compute_challenge_hash_tweak, sign_partial, verify_partial, PartialSignature};
 
 #[cfg(test)]
 pub(crate) mod testhex;
@@ -41,3 +51,6 @@ pub use secp256k1;
 
 #[cfg(feature = "k256")]
 pub use k256;
+
+#[cfg(feature = "rand")]
+pub use bip340::verify_batch;

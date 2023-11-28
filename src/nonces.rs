@@ -26,7 +26,7 @@ impl From<&[u8; 32]> for NonceSeed {
     }
 }
 
-#[cfg(feature = "rand")]
+#[cfg(any(test, feature = "rand"))]
 impl<T: rand::RngCore + rand::CryptoRng> From<&mut T> for NonceSeed {
     /// This implementation draws a [`NonceSeed`] from a mutable reference
     /// to a CSPRNG. Panics if the RNG fails to fill the seed with 32
@@ -478,7 +478,7 @@ impl SecNonce {
     ///
     /// [`SecNonce::generate`] is more secure because it combines multiple sources of
     /// entropy to compute the final nonce.
-    #[cfg(feature = "rand")]
+    #[cfg(any(test, feature = "rand"))]
     pub fn random<R>(rng: &mut R) -> SecNonce
     where
         R: rand::RngCore + rand::CryptoRng,
