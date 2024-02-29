@@ -28,6 +28,7 @@ pub mod adaptor {
     pub use crate::signing::verify_partial_adaptor as verify_partial;
 }
 
+pub mod deterministic;
 pub mod errors;
 pub mod tagged_hashes;
 
