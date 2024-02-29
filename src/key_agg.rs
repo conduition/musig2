@@ -260,6 +260,19 @@ impl KeyAggContext {
         })
     }
 
+    fn with_taproot_tweak_internal(self, merkle_root: &[u8]) -> Result<Self, TweakError> {
+        // t = int(H_taptweak(xbytes(P), k))
+        let tweak_hash: [u8; 32] = tagged_hashes::TAPROOT_TWEAK_TAG_HASHER
+            .clone()
+            .chain_update(&self.pubkey.serialize_xonly())
+            .chain_update(&merkle_root)
+            .finalize()
+            .into();
+
+        let tweak = Scalar::try_from(tweak_hash).map_err(|_| TweakError)?;
+        self.with_xonly_tweak(tweak)
+    }
+
     /// Tweak the key aggregation context with the given tapscript merkle tree root hash.
     ///
     /// This is used to commit the key aggregation context to a specific tree of Bitcoin
@@ -284,16 +297,33 @@ impl KeyAggContext {
     /// Note that the _current tweaked aggregated pubkey_ is hashed, not
     /// the plain untweaked pubkey.
     pub fn with_taproot_tweak(self, merkle_root: &[u8; 32]) -> Result<Self, TweakError> {
-        // t = int(H_taptweak(xbytes(P), k))
-        let tweak_hash: [u8; 32] = tagged_hashes::TAPROOT_TWEAK_TAG_HASHER
-            .clone()
-            .chain_update(&self.pubkey.serialize_xonly())
-            .chain_update(&merkle_root)
-            .finalize()
-            .into();
+        self.with_taproot_tweak_internal(merkle_root.as_ref())
+    }
 
-        let tweak = Scalar::try_from(tweak_hash).map_err(|_| TweakError)?;
-        self.with_xonly_tweak(tweak)
+    /// Tweak the key aggregation context with an empty unspendable merkle root.
+    ///
+    /// This allows a 3rd party observer (who doesn't know the constituent musig group
+    /// member keys) to verify, given the untweaked group key, that the tweaked group
+    /// key does  not commit to any hidden tapscript trees. See [BIP341 for more info][BIP341].
+    ///
+    /// The tweak value `t` is computed as:
+    ///
+    /// ```notrust
+    /// prefix = sha256(b"TapTweak")
+    /// tweak_hash = sha256(
+    ///     prefix,
+    ///     prefix,
+    ///     self.aggregated_pubkey().serialize_xonly(),
+    /// )
+    /// t = int(tweak_hash)
+    /// ```
+    ///
+    /// Note that the _current tweaked aggregated pubkey_ is hashed, not
+    /// the plain untweaked pubkey.
+    ///
+    /// [BIP341]: https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#cite_note-23
+    pub fn with_unspendable_taproot_tweak(self) -> Result<Self, TweakError> {
+        self.with_taproot_tweak_internal(b"")
     }
 
     /// Returns the aggregated public key, converted to a given type.
@@ -663,7 +693,37 @@ mod tests {
                 .parse()
                 .unwrap()
         );
+
+        // Taproot tweaks
+        let ctx = KeyAggContext::new(pubkeys)
+            .expect("failed to generate key aggregation context")
+            .with_taproot_tweak(
+                &"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                    .parse::<Scalar>()
+                    .unwrap()
+                    .serialize(),
+            )
+            .expect("failed to tweak key with taproot commitment");
+        assert_eq!(
+            ctx.pubkey,
+            "024650cca5e389f62e960f66ca0400927a7727fc6e84b9c38a1fd9a80271377ceb"
+                .parse::<Point>()
+                .unwrap()
+        );
+
+        // Unspendable tweaks
+        let ctx = KeyAggContext::new(pubkeys)
+            .expect("failed to generate key aggregation context")
+            .with_unspendable_taproot_tweak()
+            .expect("failed to tweak key with unspendable taproot commitment");
+        assert_eq!(
+            ctx.pubkey,
+            "029a893e777979e0cb827cd3d0458b1a677ad68f3c69ad0120cf5fc9e3268401cb"
+                .parse::<Point>()
+                .unwrap()
+        );
     }
+
     #[test]
     fn key_agg_ctx_serialization() {
         struct KeyAggSerializationTest {
