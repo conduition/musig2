@@ -179,20 +179,71 @@ pub fn verify_single(
     }
 }
 
+/// Represents a pre-processed entry in a batch of signatures to be verified.
+/// This can encapsulate either a normal BIP340 signature, or an adaptor signature.
+///
+/// To verify a large number of signatures efficiently, pass a slice of
+/// [`BatchVerificationRow`] to [`verify_batch`].
+#[cfg(any(test, feature = "rand"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatchVerificationRow {
+    pubkey: Point,
+    challenge: MaybeScalar,
+    R: MaybePoint,
+    s: MaybeScalar,
+}
+
+#[cfg(any(test, feature = "rand"))]
+impl BatchVerificationRow {
+    /// Construct a row in a batch verification table from a given BIP340 signature.
+    pub fn from_signature<M: AsRef<[u8]>>(
+        pubkey: impl Into<Point>,
+        message: M,
+        signature: LiftedSignature,
+    ) -> Self {
+        let pubkey = pubkey.into();
+        let challenge =
+            compute_challenge_hash_tweak(&signature.R.serialize_xonly(), &pubkey, message.as_ref());
+
+        BatchVerificationRow {
+            pubkey,
+            challenge,
+            R: MaybePoint::Valid(signature.R),
+            s: signature.s,
+        }
+    }
+
+    /// Construct a row in a batch verification table from a given BIP340 adaptor signature.
+    pub fn from_adaptor_signature<M: AsRef<[u8]>>(
+        pubkey: impl Into<Point>,
+        message: M,
+        adaptor_signature: AdaptorSignature,
+        adaptor_point: MaybePoint,
+    ) -> Self {
+        let pubkey = pubkey.into();
+        let effective_nonce = adaptor_signature.R + adaptor_point;
+        let challenge = compute_challenge_hash_tweak(
+            &effective_nonce.serialize_xonly(),
+            &pubkey,
+            message.as_ref(),
+        );
+
+        BatchVerificationRow {
+            pubkey,
+            challenge,
+            R: adaptor_signature.R,
+            s: adaptor_signature.s,
+        }
+    }
+}
+
 /// Runs [BIP340](https://github.com/bitcoin/bips/blob/master/bip-0340.mediawiki)
 /// batch verification on a collection of schnorr signatures.
 ///
 /// Batch verification checks a table of pubkeys, messages, and
 /// signatures and returns an error if any signatures in the
 /// collection are not valid for the corresponding `(pubkey, message)`
-/// pair. All slices must be the same length or this function will
-/// return an error.
-///
-/// As part of batch verification, signature nonces must be parsed
-/// as valid curve points, so the raw signature type `T` must be fallibly
-/// convertible to a [`LiftedSignature`], such as `&[u8]`, `[u8; 64]`,
-/// [`CompactSignature`], [`secp256k1::schnorr::Signature`], etc.
-/// If the conversion fails, we return [`VerifyError::BadSignature`].
+/// pair.
 ///
 /// Batch verification enables noteworthy speedups when verifying
 /// large numbers of signatures, but does not give any indication
@@ -204,75 +255,39 @@ pub fn verify_single(
 /// The RNG is seeded with all the pubkeys, messages, and signatures
 /// rather than being truly random.
 #[cfg(any(test, feature = "rand"))]
-pub fn verify_batch<P, T>(
-    pubkeys: &[P],
-    messages: &[impl AsRef<[u8]>],
-    raw_signatures: &[T],
-) -> Result<(), VerifyError>
-where
-    P: Clone + Into<Point>,
-    T: Clone + TryInto<LiftedSignature>,
-{
-    use VerifyError::BadSignature;
-
-    if pubkeys.len() != messages.len() || raw_signatures.len() != pubkeys.len() {
-        return Err(BadSignature);
-    }
-
-    let pubkeys: Vec<Point> = pubkeys
-        .iter()
-        .cloned()
-        .map(|pubkey| pubkey.into())
-        .collect();
-
-    let mut parsed_signatures = Vec::<LiftedSignature>::with_capacity(pubkeys.len());
-    let mut challenge_tweaks = Vec::<MaybeScalar>::with_capacity(pubkeys.len());
-    for (i, raw_signature) in raw_signatures.iter().enumerate() {
-        let parsed_signature = raw_signature.clone().try_into().map_err(|_| BadSignature)?;
-
-        let e = compute_challenge_hash_tweak(
-            &parsed_signature.R.serialize_xonly(),
-            &pubkeys[i],
-            messages[i].as_ref(),
-        );
-
-        parsed_signatures.push(parsed_signature);
-        challenge_tweaks.push(e)
-    }
-
+pub fn verify_batch(rows: &[BatchVerificationRow]) -> Result<(), VerifyError> {
     // Seed the CSPRNG
-
     let mut rng = {
         let mut seed_hash = tagged_hashes::BIP0340_BATCH_TAG_HASHER.clone();
-        for pubkey in pubkeys.iter() {
-            seed_hash.update(&pubkey.serialize());
+
+        // Challenges commit to the pubkey, nonce, and message. That's why
+        // we're not explicitly seeding the RNG with the pubkey, nonce, and message
+        // as suggested by BIP340.
+        for row in rows {
+            seed_hash.update(&row.challenge.serialize());
         }
-        for message in messages {
-            seed_hash.update(message.as_ref());
-        }
-        for signature in parsed_signatures.iter() {
-            seed_hash.update(&signature.serialize());
+
+        for row in rows {
+            seed_hash.update(&row.s.serialize());
         }
         rand::rngs::StdRng::from_seed(seed_hash.finalize().into())
     };
 
     let mut lhs = MaybeScalar::Zero;
-    let mut rhs_terms = Vec::<MaybePoint>::with_capacity(pubkeys.len());
+    let mut rhs_terms = Vec::<MaybePoint>::with_capacity(rows.len());
 
-    for i in 0..pubkeys.len() {
+    for (i, row) in rows.into_iter().enumerate() {
         let random = if i == 0 {
             Scalar::one()
         } else {
             Scalar::random(&mut rng)
         };
 
-        let pubkey = pubkeys[i].to_even_y(); // lift_x on all pubkeys
-        let (R, s): (Point, MaybeScalar) = parsed_signatures[i].unzip();
-        let challenge = challenge_tweaks[i];
+        let pubkey = row.pubkey.to_even_y(); // lift_x on all pubkeys
 
-        lhs += s * random;
-        rhs_terms.push(MaybePoint::Valid(R * random));
-        rhs_terms.push((random * challenge) * pubkey);
+        lhs += row.s * random;
+        rhs_terms.push(row.R * random);
+        rhs_terms.push((random * row.challenge) * pubkey);
     }
 
     // (s1*a1 + s2*a2 + ... + sn*an)G ?= (a1*R1) + (a2*R2) + ... + (an*Rn) +
@@ -281,7 +296,7 @@ where
     if lhs * G == rhs {
         Ok(())
     } else {
-        Err(BadSignature)
+        Err(VerifyError::BadSignature)
     }
 }
 
@@ -314,7 +329,7 @@ mod tests {
 
         let mut csv_reader = csv::Reader::from_reader(BIP340_TEST_VECTORS);
 
-        let mut valid_sigs_batch = Vec::<(Point, Vec<u8>, [u8; 64])>::new();
+        let mut valid_sigs_batch = Vec::<BatchVerificationRow>::new();
 
         for result in csv_reader.deserialize() {
             let record: TestVectorRecord = result.expect("failed to parse BIP340 test vector");
@@ -389,7 +404,11 @@ mod tests {
                         "verification should pass for signature {} - {}",
                         &record.signature, record.comment,
                     ));
-                    valid_sigs_batch.push((pubkey, record.message, test_vec_signature));
+                    valid_sigs_batch.push(BatchVerificationRow::from_signature(
+                        pubkey,
+                        record.message,
+                        LiftedSignature::try_from(test_vec_signature).unwrap(),
+                    ));
                 }
 
                 "FALSE" => {
@@ -407,11 +426,6 @@ mod tests {
         }
 
         // test batch verification
-        let (pubkeys, (messages, raw_signatures)): (Vec<_>, (Vec<_>, Vec<_>)) = valid_sigs_batch
-            .into_iter()
-            .map(|(pk, msg, sig)| (pk, (msg, sig))) // unzip only supports tuples of length two
-            .unzip();
-
-        verify_batch(&pubkeys, &messages, &raw_signatures).expect("batch verification failed");
+        verify_batch(&valid_sigs_batch).expect("batch verification failed");
     }
 }

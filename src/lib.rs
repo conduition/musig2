@@ -53,5 +53,5 @@ pub use secp256k1;
 #[cfg(feature = "k256")]
 pub use k256;
 
-#[cfg(feature = "rand")]
-pub use bip340::verify_batch;
+#[cfg(any(test, feature = "rand"))]
+pub use bip340::{verify_batch, BatchVerificationRow};
