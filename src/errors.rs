@@ -21,6 +21,23 @@ impl From<secp::errors::InfinityPointError> for KeyAggError {
     }
 }
 
+/// Returned when aggregating a collection of secret keys with [`KeyAggContext`],
+/// but some secret keys are missing, or the keys are not the correct secret keys
+/// for the pubkeys contained in the key agg context.
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
+pub struct InvalidSecretKeysError;
+impl fmt::Display for InvalidSecretKeysError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str("missing or invalid secret keys provided for aggregation")
+    }
+}
+impl Error for InvalidSecretKeysError {}
+impl From<secp::errors::ZeroScalarError> for InvalidSecretKeysError {
+    fn from(_: secp::errors::ZeroScalarError) -> Self {
+        InvalidSecretKeysError
+    }
+}
+
 /// Returned when tweaking a [`KeyAggContext`] results in the point
 /// at infinity, or if using [`KeyAggContext::with_taproot_tweak`]
 /// when the tweak input results in a hash which exceeds the curve

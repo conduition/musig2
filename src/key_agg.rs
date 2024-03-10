@@ -1,7 +1,7 @@
 use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 use std::collections::HashMap;
 
-use crate::errors::{DecodeError, KeyAggError, TweakError};
+use crate::errors::{DecodeError, InvalidSecretKeysError, KeyAggError, TweakError};
 use crate::{tagged_hashes, BinaryEncoding};
 
 use sha2::Digest as _;
@@ -448,6 +448,32 @@ impl KeyAggContext {
         let index = self.pubkey_index(pubkey)?;
         Some(self.key_coefficients[index])
     }
+
+    /// Compute the aggregated secret key for the [`KeyAggContext`] given an ordered
+    /// set of secret keys. Returns [`InvalidSecretKeysError`] if the secret keys do not
+    /// align with the ordered set of pubkeys intially given to the [`KeyAggContext`],
+    /// which can be checked via the [`KeyAggContext::pubkeys`] method.
+    pub fn aggregated_seckey<T: From<Scalar>>(
+        &self,
+        seckeys: impl IntoIterator<Item = Scalar>,
+    ) -> Result<T, InvalidSecretKeysError> {
+        let group_untweaked_pubkey: Point = self.aggregated_pubkey_untweaked();
+
+        let mut group_seckey = MaybeScalar::Zero;
+        for (i, seckey) in seckeys.into_iter().enumerate() {
+            let key_coeff = *self.key_coefficients.get(i).ok_or(InvalidSecretKeysError)?;
+            group_seckey += seckey * key_coeff;
+        }
+        group_seckey = group_seckey.negate_if(group_untweaked_pubkey.parity());
+
+        let group_tweaked_seckey = (group_seckey + self.tweak_acc).not_zero()?;
+
+        if group_tweaked_seckey * G != self.pubkey {
+            return Err(InvalidSecretKeysError);
+        }
+
+        Ok(T::from(group_tweaked_seckey))
+    }
 }
 
 fn hash_pubkeys<P: std::borrow::Borrow<Point>>(ordered_pubkeys: &[P]) -> [u8; 32] {
@@ -596,7 +622,7 @@ impl_hex_display!(KeyAggContext);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testhex;
+    use crate::{sign_solo, testhex, verify_single, CompactSignature};
 
     #[test]
     fn test_key_aggregation() {
@@ -880,6 +906,41 @@ mod tests {
             let _: KeyAggContext =
                 serde_json::from_str(&format!("\"{}\"", test_case.serialized_hex))
                     .expect("failed to deserialize KeyAggContext with serde");
+        }
+    }
+
+    #[test]
+    fn secret_key_aggregation() {
+        // The test is repeated to catch failures caused by keys whose
+        // parity randomly align to make incorrect parity-handling code succeed.
+        for _ in 0..16 {
+            let mut rng = rand::thread_rng();
+            let seckeys = [
+                Scalar::random(&mut rng),
+                Scalar::random(&mut rng),
+                Scalar::random(&mut rng),
+                Scalar::random(&mut rng),
+            ];
+
+            let pubkeys: Vec<Point> = seckeys
+                .into_iter()
+                .map(|seckey| seckey.base_point_mul())
+                .collect();
+
+            let key_agg_ctx = KeyAggContext::new(pubkeys)
+                .unwrap()
+                .with_unspendable_taproot_tweak()
+                .unwrap();
+
+            let group_seckey: Scalar = key_agg_ctx.aggregated_seckey(seckeys).unwrap();
+            let group_pubkey: Point = key_agg_ctx.aggregated_pubkey();
+            assert_eq!(group_seckey.base_point_mul(), group_pubkey);
+
+            let message = b"hello world";
+            let signature: CompactSignature = sign_solo(group_seckey, message, &mut rng);
+
+            verify_single(group_pubkey, signature, message)
+                .expect("signature as group should be valid");
         }
     }
 }
