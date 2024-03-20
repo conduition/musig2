@@ -472,14 +472,12 @@ impl KeyAggContext {
         &self,
         seckeys: impl IntoIterator<Item = Scalar>,
     ) -> Result<T, InvalidSecretKeysError> {
-        let group_untweaked_pubkey: Point = self.aggregated_pubkey_untweaked();
-
         let mut group_seckey = MaybeScalar::Zero;
         for (i, seckey) in seckeys.into_iter().enumerate() {
             let key_coeff = *self.key_coefficients.get(i).ok_or(InvalidSecretKeysError)?;
             group_seckey += seckey * key_coeff;
         }
-        group_seckey = group_seckey.negate_if(group_untweaked_pubkey.parity());
+        group_seckey = group_seckey.negate_if(self.parity_acc);
 
         let group_tweaked_seckey = (group_seckey + self.tweak_acc).not_zero()?;
 
