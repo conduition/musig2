@@ -922,12 +922,12 @@ mod tests {
         }
     }
 
+    // The test is repeated to catch failures caused by keys whose
+    // parity randomly align to make incorrect parity-handling code succeed.
     #[test]
-    fn secret_key_aggregation() {
-        // The test is repeated to catch failures caused by keys whose
-        // parity randomly align to make incorrect parity-handling code succeed.
+    fn secret_key_aggregation_random() {
+        let mut rng = rand::thread_rng();
         for _ in 0..16 {
-            let mut rng = rand::thread_rng();
             let seckeys = [
                 Scalar::random(&mut rng),
                 Scalar::random(&mut rng),
@@ -940,20 +940,37 @@ mod tests {
                 .map(|seckey| seckey.base_point_mul())
                 .collect();
 
-            let key_agg_ctx = KeyAggContext::new(pubkeys)
-                .unwrap()
-                .with_unspendable_taproot_tweak()
-                .unwrap();
+            // Without tweak
+            {
+                let key_agg_ctx = KeyAggContext::new(pubkeys.clone()).unwrap();
+                let group_seckey: Scalar = key_agg_ctx.aggregated_seckey(seckeys).unwrap();
+                let group_pubkey: Point = key_agg_ctx.aggregated_pubkey();
+                assert_eq!(group_seckey.base_point_mul(), group_pubkey);
 
-            let group_seckey: Scalar = key_agg_ctx.aggregated_seckey(seckeys).unwrap();
-            let group_pubkey: Point = key_agg_ctx.aggregated_pubkey();
-            assert_eq!(group_seckey.base_point_mul(), group_pubkey);
+                let message = b"hello world";
+                let signature: CompactSignature = sign_solo(group_seckey, message, &mut rng);
 
-            let message = b"hello world";
-            let signature: CompactSignature = sign_solo(group_seckey, message, &mut rng);
+                verify_single(group_pubkey, signature, message)
+                    .expect("tweaked signature as group should be valid");
+            }
 
-            verify_single(group_pubkey, signature, message)
-                .expect("signature as group should be valid");
+            // With a tweak
+            {
+                let key_agg_ctx = KeyAggContext::new(pubkeys.clone())
+                    .unwrap()
+                    .with_unspendable_taproot_tweak()
+                    .unwrap();
+
+                let group_seckey: Scalar = key_agg_ctx.aggregated_seckey(seckeys).unwrap();
+                let group_pubkey: Point = key_agg_ctx.aggregated_pubkey();
+                assert_eq!(group_seckey.base_point_mul(), group_pubkey);
+
+                let message = b"hello world";
+                let signature: CompactSignature = sign_solo(group_seckey, message, &mut rng);
+
+                verify_single(group_pubkey, signature, message)
+                    .expect("tweaked signature as group should be valid");
+            }
         }
     }
 }
