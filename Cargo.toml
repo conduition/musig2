@@ -1,6 +1,6 @@
 [package]
 name = "musig2"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2021"
 authors = ["conduition <conduition@proton.me>"]
 description = "Flexible Rust implementation of the MuSig2 multisignature protocol, compatible with Bitcoin."
