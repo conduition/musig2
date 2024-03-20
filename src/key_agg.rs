@@ -34,6 +34,9 @@ pub struct KeyAggContext {
     /// same order as `ordered_pubkeys`.
     pub(crate) key_coefficients: Vec<MaybeScalar>,
 
+    /// A cache of effective individual pubkeys, i.e. `pubkey * self.key_coefficient(pubkey)`.
+    pub(crate) effective_pubkeys: Vec<MaybePoint>,
+
     pub(crate) parity_acc: subtle::Choice, // false means g=1, true means g=n-1
     pub(crate) tweak_acc: MaybeScalar,     // None means zero.
 }
@@ -108,7 +111,7 @@ impl KeyAggContext {
 
         let pk_list_hash = hash_pubkeys(&ordered_pubkeys);
 
-        let (tweaked_pubkeys, key_coefficients): (Vec<MaybePoint>, Vec<MaybeScalar>) =
+        let (effective_pubkeys, key_coefficients): (Vec<MaybePoint>, Vec<MaybeScalar>) =
             ordered_pubkeys
                 .iter()
                 .map(|&pubkey| {
@@ -118,7 +121,7 @@ impl KeyAggContext {
                 })
                 .unzip();
 
-        let aggregated_pubkey = MaybePoint::sum(tweaked_pubkeys).not_inf()?;
+        let aggregated_pubkey = MaybePoint::sum(&effective_pubkeys).not_inf()?;
 
         let pubkey_indexes = HashMap::from_iter(
             ordered_pubkeys
@@ -133,6 +136,7 @@ impl KeyAggContext {
             ordered_pubkeys,
             pubkey_indexes,
             key_coefficients,
+            effective_pubkeys,
             parity_acc: subtle::Choice::from(0),
             tweak_acc: MaybeScalar::Zero,
         })
@@ -447,6 +451,17 @@ impl KeyAggContext {
     pub fn key_coefficient(&self, pubkey: impl Into<Point>) -> Option<MaybeScalar> {
         let index = self.pubkey_index(pubkey)?;
         Some(self.key_coefficients[index])
+    }
+
+    /// Finds the effective pubkey for a given individual pubkey. This is
+    /// essentially the same as `pubkey * key_agg_ctx.key_coefficient(pubkey)`,
+    /// except it is faster than recomputing it manually because the `key_agg_ctx`
+    /// caches this value internally.
+    ///
+    /// Returns `None` if the given `pubkey` is not part of the aggregated key.
+    pub fn effective_pubkey<T: From<MaybePoint>>(&self, pubkey: impl Into<Point>) -> Option<T> {
+        let index = self.pubkey_index(pubkey)?;
+        Some(T::from(self.effective_pubkeys[index]))
     }
 
     /// Compute the aggregated secret key for the [`KeyAggContext`] given an ordered

@@ -147,12 +147,11 @@ pub fn verify_partial_adaptor(
     message: impl AsRef<[u8]>,
 ) -> Result<(), VerifyError> {
     let partial_signature: MaybeScalar = partial_signature.into();
-    let individual_pubkey: Point = individual_pubkey.into();
 
-    // As a side-effect, looking up the cached key coefficient also confirms
+    // As a side-effect, looking up the cached effective key also confirms
     // the individual key is indeed part of the aggregated key.
-    let key_coeff = key_agg_ctx
-        .key_coefficient(individual_pubkey)
+    let effective_pubkey: MaybePoint = key_agg_ctx
+        .effective_pubkey(individual_pubkey)
         .ok_or(VerifyError::UnknownKey)?;
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
@@ -173,7 +172,7 @@ pub fn verify_partial_adaptor(
 
     // s * G == R + (g * gacc * e * a * P)
     let challenge_parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
-    let challenge_point = (key_coeff * e * individual_pubkey).negate_if(challenge_parity);
+    let challenge_point = (e * effective_pubkey).negate_if(challenge_parity);
 
     if partial_signature * G != effective_nonce + challenge_point {
         return Err(VerifyError::BadSignature);
