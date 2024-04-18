@@ -313,7 +313,7 @@ let partial_signatures = [
 ];
 
 /// Signatures should be verified upon receipt and invalid signatures
-/// should be blamed the signer who sent them.
+/// should be blamed on the signer who sent them.
 for (i, partial_signature) in partial_signatures.into_iter().enumerate() {
     if i == signer_index {
         // Don't bother verifying our own signature
