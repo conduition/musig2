@@ -283,7 +283,7 @@ pub fn verify_batch(rows: &[BatchVerificationRow]) -> Result<(), VerifyError> {
     };
 
     let mut lhs = MaybeScalar::Zero;
-    let mut rhs_terms = Vec::<MaybePoint>::with_capacity(rows.len());
+    let mut rhs_terms = Vec::<MaybePoint>::with_capacity(rows.len() * 2);
 
     for (i, row) in rows.into_iter().enumerate() {
         let random = if i == 0 {
