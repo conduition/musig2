@@ -22,7 +22,7 @@ impl From<[u8; 32]> for NonceSeed {
 impl From<&[u8; 32]> for NonceSeed {
     /// Converts a reference to a byte array to a `NonceSeed` by copying.
     fn from(bytes: &[u8; 32]) -> Self {
-        NonceSeed(bytes.clone())
+        NonceSeed(*bytes)
     }
 }
 
@@ -333,60 +333,60 @@ impl<'snb> SecNonceBuilder<'snb> {
 
         let nonce_seed_hash: [u8; 32] = tagged_hashes::MUSIG_AUX_TAG_HASHER
             .clone()
-            .chain_update(&self.nonce_seed_bytes)
+            .chain_update(self.nonce_seed_bytes)
             .finalize()
             .into();
 
         let mut hasher = tagged_hashes::MUSIG_NONCE_TAG_HASHER
             .clone()
-            .chain_update(&xor_bytes(&seckey_bytes, &nonce_seed_hash));
+            .chain_update(xor_bytes(&seckey_bytes, &nonce_seed_hash));
 
         // BIP327 doesn't allow the public key to be an optional argument,
         // but there is no hard reason for that other than 'the RNG might fail'.
         // For ergonomics we allow the pubkey to be omitted here in the same
         // fashion as the aggregated pubkey.
         match self.pubkey {
-            None => hasher.update(&[0]),
+            None => hasher.update([0]),
             Some(pubkey) => {
-                hasher.update(&[33]); // individual pubkey len
-                hasher.update(&pubkey.serialize());
+                hasher.update([33]); // individual pubkey len
+                hasher.update(pubkey.serialize());
             }
         }
 
         match self.aggregated_pubkey {
-            None => hasher.update(&[0]),
+            None => hasher.update([0]),
             Some(aggregated_pubkey) => {
-                hasher.update(&[32]); // aggregated pubkey len
-                hasher.update(&aggregated_pubkey.serialize_xonly());
+                hasher.update([32]); // aggregated pubkey len
+                hasher.update(aggregated_pubkey.serialize_xonly());
             }
         };
 
         match self.message {
-            None => hasher.update(&[0]),
+            None => hasher.update([0]),
             Some(message) => {
-                hasher.update(&[1]);
-                hasher.update(&(message.len() as u64).to_be_bytes());
+                hasher.update([1]);
+                hasher.update((message.len() as u64).to_be_bytes());
                 hasher.update(message);
             }
         };
 
         // We still write the extra input length if the caller provided empty extra info.
-        if self.extra_inputs.len() > 0 {
+        if !self.extra_inputs.is_empty() {
             let extra_input_total_len: usize = self
                 .extra_inputs
                 .iter()
                 .map(|extra_in| extra_in.as_ref().len())
                 .sum();
 
-            hasher.update(&(extra_input_total_len as u32).to_be_bytes());
+            hasher.update((extra_input_total_len as u32).to_be_bytes());
             for extra_input in self.extra_inputs {
                 hasher.update(extra_input.as_ref());
             }
         }
 
         // Cloning the hash engine state reduces the computations needed.
-        let hash1 = <[u8; 32]>::from(hasher.clone().chain_update(&[0]).finalize());
-        let hash2 = <[u8; 32]>::from(hasher.clone().chain_update(&[1]).finalize());
+        let hash1 = <[u8; 32]>::from(hasher.clone().chain_update([0]).finalize());
+        let hash2 = <[u8; 32]>::from(hasher.clone().chain_update([1]).finalize());
 
         let k1 = match MaybeScalar::reduce_from(&hash1) {
             MaybeScalar::Zero => Scalar::one(),
@@ -608,9 +608,9 @@ impl AggNonce {
     {
         let hash: [u8; 32] = tagged_hashes::MUSIG_NONCECOEF_TAG_HASHER
             .clone()
-            .chain_update(&self.R1.serialize())
-            .chain_update(&self.R2.serialize())
-            .chain_update(&aggregated_pubkey.into().serialize_xonly())
+            .chain_update(self.R1.serialize())
+            .chain_update(self.R2.serialize())
+            .chain_update(aggregated_pubkey.into().serialize_xonly())
             .chain_update(message.as_ref())
             .finalize()
             .into();
@@ -807,10 +807,13 @@ mod tests {
             .expect("failed to parse test vectors from nonce_gen_vectors.json");
 
         for test_case in vectors.test_cases {
-            let aggregated_pubkey = Point::lift_x(&test_case.aggregated_pubkey).expect(&format!(
-                "invalid aggregated xonly pubkey in test vector: {}",
-                base16ct::lower::encode_string(&test_case.aggregated_pubkey)
-            ));
+            let aggregated_pubkey =
+                Point::lift_x(&test_case.aggregated_pubkey).unwrap_or_else(|_| {
+                    panic!(
+                        "invalid aggregated xonly pubkey in test vector: {}",
+                        base16ct::lower::encode_string(&test_case.aggregated_pubkey)
+                    )
+                });
             let secnonce = SecNonce::generate(
                 test_case.nonce_seed,
                 test_case.seckey,
@@ -865,10 +868,12 @@ mod tests {
                 .public_nonce_indexes
                 .into_iter()
                 .map(|i| {
-                    PubNonce::from_bytes(&vectors.public_nonces[i]).expect(&format!(
-                        "used invalid nonce in valid test case: {}",
-                        base16ct::lower::encode_string(&vectors.public_nonces[i])
-                    ))
+                    PubNonce::from_bytes(&vectors.public_nonces[i]).unwrap_or_else(|_| {
+                        panic!(
+                            "used invalid nonce in valid test case: {}",
+                            base16ct::lower::encode_string(&vectors.public_nonces[i])
+                        )
+                    })
                 })
                 .collect();
 
@@ -886,10 +891,9 @@ mod tests {
                         Err(DecodeError::from(secp::errors::InvalidPointBytes))
                     );
                 } else {
-                    nonce_result.expect(&format!(
-                        "unexpected pub nonce parsing error for signer {}",
-                        i
-                    ));
+                    nonce_result.unwrap_or_else(|_| {
+                        panic!("unexpected pub nonce parsing error for signer {}", i)
+                    });
                 }
             }
         }
@@ -920,7 +924,7 @@ mod tests {
             alice_seckey,
             alice_secnonce.clone(),
             &aggnonce_1,
-            &message,
+            message,
         )
         .unwrap();
 
@@ -932,7 +936,7 @@ mod tests {
             alice_seckey,
             alice_secnonce.clone(),
             &aggnonce_2,
-            &message,
+            message,
         )
         .unwrap();
 
@@ -944,7 +948,7 @@ mod tests {
             alice_seckey,
             alice_secnonce.clone(),
             &aggnonce_3,
-            &message,
+            message,
         )
         .unwrap();
 
@@ -953,24 +957,24 @@ mod tests {
         let a = key_agg_ctx.key_coefficient(alice_pubkey).unwrap();
         let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
 
-        let b1: MaybeScalar = aggnonce_1.nonce_coefficient(aggregated_pubkey, &message);
-        let b2: MaybeScalar = aggnonce_2.nonce_coefficient(aggregated_pubkey, &message);
-        let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, &message);
+        let b1: MaybeScalar = aggnonce_1.nonce_coefficient(aggregated_pubkey, message);
+        let b2: MaybeScalar = aggnonce_2.nonce_coefficient(aggregated_pubkey, message);
+        let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, message);
 
         let e1: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_1.final_nonce::<Point>(b1).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
-            &message,
+            message,
         );
         let e2: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_2.final_nonce::<Point>(b2).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
-            &message,
+            message,
         );
         let e3: MaybeScalar = crate::compute_challenge_hash_tweak(
             &aggnonce_3.final_nonce::<Point>(b3).serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
-            &message,
+            message,
         );
 
         let b2_diff = (b2 - b1).unwrap();

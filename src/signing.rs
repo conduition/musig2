@@ -23,7 +23,7 @@ pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
     let hash: [u8; 32] = tagged_hashes::BIP0340_CHALLENGE_TAG_HASHER
         .clone()
         .chain_update(final_nonce_xonly)
-        .chain_update(&aggregated_pubkey.serialize_xonly())
+        .chain_update(aggregated_pubkey.serialize_xonly())
         .chain_update(message.as_ref())
         .finalize()
         .into();
@@ -293,10 +293,12 @@ mod tests {
                 .key_indices
                 .into_iter()
                 .map(|i| {
-                    Point::try_from(&vectors.pubkeys[i]).expect(&format!(
-                        "invalid pubkey used in valid test: {}",
-                        base16ct::lower::encode_string(&vectors.pubkeys[i])
-                    ))
+                    Point::try_from(&vectors.pubkeys[i]).unwrap_or_else(|_| {
+                        panic!(
+                            "invalid pubkey used in valid test: {}",
+                            base16ct::lower::encode_string(&vectors.pubkeys[i])
+                        )
+                    })
                 })
                 .collect();
 
@@ -304,10 +306,12 @@ mod tests {
             assert_eq!(signer_pubkey, vectors.seckey.base_point_mul());
 
             let aggnonce_bytes = &vectors.aggregated_nonces[test_case.aggnonce_index];
-            let aggregated_nonce = AggNonce::from_bytes(aggnonce_bytes).expect(&format!(
-                "invalid aggregated nonce used in valid test case: {}",
-                base16ct::lower::encode_string(aggnonce_bytes)
-            ));
+            let aggregated_nonce = AggNonce::from_bytes(aggnonce_bytes).unwrap_or_else(|_| {
+                panic!(
+                    "invalid aggregated nonce used in valid test case: {}",
+                    base16ct::lower::encode_string(aggnonce_bytes)
+                )
+            });
 
             let key_agg_ctx =
                 KeyAggContext::new(pubkeys).expect("error constructing key aggregation context");
@@ -345,10 +349,12 @@ mod tests {
                 .nonce_indices
                 .into_iter()
                 .map(|i| {
-                    PubNonce::from_bytes(&vectors.public_nonces[i]).expect(&format!(
-                        "invalid pubnonce in valid test: {}",
-                        base16ct::lower::encode_string(&vectors.public_nonces[i])
-                    ))
+                    PubNonce::from_bytes(&vectors.public_nonces[i]).unwrap_or_else(|_| {
+                        panic!(
+                            "invalid pubnonce in valid test: {}",
+                            base16ct::lower::encode_string(&vectors.public_nonces[i])
+                        )
+                    })
                 })
                 .collect();
 
@@ -427,7 +433,7 @@ mod tests {
 
         // invalid input test case 2, 3, and 4: invalid aggnonce
         {
-            for test_case in vectors.sign_error_test_cases[2..5].into_iter() {
+            for test_case in vectors.sign_error_test_cases[2..5].iter() {
                 let result =
                     AggNonce::from_bytes(&vectors.aggregated_nonces[test_case.aggnonce_index]);
 
@@ -453,7 +459,7 @@ mod tests {
 
         // Verification failure test cases 0 and 1: fake signatures
         {
-            for test_case in vectors.verify_fail_test_cases[..2].into_iter() {
+            for test_case in vectors.verify_fail_test_cases[..2].iter() {
                 let pubkeys: Vec<Point> = test_case
                     .key_indices
                     .iter()
@@ -570,8 +576,9 @@ mod tests {
                 })
                 .zip(test_case.is_xonly)
                 .fold(key_agg_ctx, |ctx, (tweak, is_xonly)| {
-                    ctx.with_tweak(tweak, is_xonly)
-                        .expect(&format!("failed to tweak key agg context with {:x}", tweak))
+                    ctx.with_tweak(tweak, is_xonly).unwrap_or_else(|_| {
+                        panic!("failed to tweak key agg context with {:x}", tweak)
+                    })
                 });
 
             let partial_signature: PartialSignature = sign_partial(

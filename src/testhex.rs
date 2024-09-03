@@ -28,7 +28,7 @@ impl<const SIZE: usize> TryFromBytes for [u8; SIZE] {
         }
 
         let mut array = [0; SIZE];
-        array[..].clone_from_slice(&bytes);
+        array[..].clone_from_slice(bytes);
         Ok(array)
     }
 }

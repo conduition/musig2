@@ -39,9 +39,7 @@ use sha2::Sha256;
 use sha2::Digest as _;
 
 fn with_tag_hash_prefix(tag_hash: [u8; 32]) -> Sha256 {
-    Sha256::new()
-        .chain_update(&tag_hash)
-        .chain_update(&tag_hash)
+    Sha256::new().chain_update(tag_hash).chain_update(tag_hash)
 }
 
 /// sha256(b"KeyAgg list")

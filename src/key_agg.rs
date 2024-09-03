@@ -96,7 +96,7 @@ impl KeyAggContext {
         P: Into<Point>,
     {
         let ordered_pubkeys: Vec<Point> = pubkeys.into_iter().map(|p| p.into()).collect();
-        assert!(ordered_pubkeys.len() > 0, "received empty set of pubkeys");
+        assert!(!ordered_pubkeys.is_empty(), "received empty set of pubkeys");
         assert!(
             ordered_pubkeys.len() <= u32::MAX as usize,
             "max number of pubkeys is u32::MAX"
@@ -106,7 +106,7 @@ impl KeyAggContext {
         // that every public key `X` should be tweaked with a coefficient `H_agg(L, X)`
         // to prevent collisions (See appendix B of the musig2 paper).
         let pk2: Option<&Point> = ordered_pubkeys[1..]
-            .into_iter()
+            .iter()
             .find(|pubkey| pubkey != &&ordered_pubkeys[0]);
 
         let pk_list_hash = hash_pubkeys(&ordered_pubkeys);
@@ -268,8 +268,8 @@ impl KeyAggContext {
         // t = int(H_taptweak(xbytes(P), k))
         let tweak_hash: [u8; 32] = tagged_hashes::TAPROOT_TWEAK_TAG_HASHER
             .clone()
-            .chain_update(&self.pubkey.serialize_xonly())
-            .chain_update(&merkle_root)
+            .chain_update(self.pubkey.serialize_xonly())
+            .chain_update(merkle_root)
             .finalize()
             .into();
 
@@ -492,7 +492,7 @@ impl KeyAggContext {
 fn hash_pubkeys<P: std::borrow::Borrow<Point>>(ordered_pubkeys: &[P]) -> [u8; 32] {
     let mut h = tagged_hashes::KEYAGG_LIST_TAG_HASHER.clone();
     for pubkey in ordered_pubkeys {
-        h.update(&pubkey.borrow().serialize());
+        h.update(pubkey.borrow().serialize());
     }
     h.finalize().into()
 }
@@ -508,8 +508,8 @@ fn compute_key_aggregation_coefficient(
 
     let hash: [u8; 32] = tagged_hashes::KEYAGG_COEFF_TAG_HASHER
         .clone()
-        .chain_update(&pk_list_hash)
-        .chain_update(&pubkey.serialize())
+        .chain_update(pk_list_hash)
+        .chain_update(pubkey.serialize())
         .finalize()
         .into();
 
@@ -535,7 +535,7 @@ impl BinaryEncoding for KeyAggContext {
     ///
     /// - `header_byte` (1 byte)
     ///     - Lowest order bit is set if the parity of the aggregated pubkey should
-    ///     be negated upon deserialization (due to use of "x-only" tweaks).
+    ///       be negated upon deserialization (due to use of "x-only" tweaks).
     ///     - Second lowest order bit is set if there is an accumulated tweak value
     ///       present in the serialization.
     /// - `tweak_acc` \[optional\] (32 bytes)
@@ -725,7 +725,7 @@ mod tests {
                 .parse::<Point>()
                 .unwrap()
         );
-        assert_eq!(bool::from(ctx.parity_acc), true);
+        assert!(bool::from(ctx.parity_acc));
         assert_eq!(
             ctx.tweak_acc,
             "A5BEB2D09000E2391E98EEBC8AA80CD4FB13845DC75B673D8466609410627D0B"

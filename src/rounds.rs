@@ -152,7 +152,7 @@ impl FirstRound {
 
     /// Returns true once all public nonces have been received from every signer.
     pub fn is_complete(&self) -> bool {
-        self.holdouts().len() == 0
+        self.holdouts().is_empty()
     }
 
     /// Finishes the first round once all nonces are received, combining nonces
@@ -405,7 +405,7 @@ impl<M: AsRef<[u8]>> SecondRound<M> {
 
     /// Returns true once we have all partial signatures from the group.
     pub fn is_complete(&self) -> bool {
-        self.holdouts().len() == 0
+        self.holdouts().is_empty()
     }
 
     /// Finishes the second round once all partial signatures are received,
@@ -496,10 +496,9 @@ mod tests {
                     i,
                     SecNonceSpices::new().with_seckey(sk).with_message(&message),
                 )
-                .expect(&format!(
-                    "failed to construct FirstRound machine for signer {}",
-                    i
-                ))
+                .unwrap_or_else(|_| {
+                    panic!("failed to construct FirstRound machine for signer {}", i)
+                })
             })
             .collect();
 
@@ -529,14 +528,14 @@ mod tests {
             for round in first_rounds.iter_mut() {
                 round
                     .receive_nonce(i, nonce.clone())
-                    .expect(&format!("should receive nonce {} OK", i));
+                    .unwrap_or_else(|_| panic!("should receive nonce {} OK", i));
 
                 let mut expected_holdouts: Vec<usize> = (0..seckeys.len()).collect();
                 expected_holdouts.retain(|&j| j != round.signer_index && j > i);
                 assert_eq!(round.holdouts(), expected_holdouts);
 
                 // Confirm the round completes only once all nonces are received
-                if expected_holdouts.len() == 0 {
+                if expected_holdouts.is_empty() {
                     assert!(
                         round.is_complete(),
                         "first round should have completed after signer {} receiving nonce {}",
@@ -581,7 +580,7 @@ mod tests {
             .map(|(i, first_round)| -> SecondRound<&str> {
                 first_round
                     .finalize(seckeys[i], message)
-                    .expect(&format!("failed to finalize first round for signer {}", i))
+                    .unwrap_or_else(|_| panic!("failed to finalize first round for signer {}", i))
             })
             .collect();
 
@@ -621,14 +620,14 @@ mod tests {
             for (receiver_index, round) in second_rounds.iter_mut().enumerate() {
                 round
                     .receive_signature(i, partial_signature)
-                    .expect(&format!("should receive partial signature {} OK", i));
+                    .unwrap_or_else(|_| panic!("should receive partial signature {} OK", i));
 
                 let mut expected_holdouts: Vec<usize> = (0..seckeys.len()).collect();
                 expected_holdouts.retain(|&j| j != receiver_index && j > i);
                 assert_eq!(round.holdouts(), expected_holdouts);
 
                 // Confirm the round completes only once all signatures are received
-                if expected_holdouts.len() == 0 {
+                if expected_holdouts.is_empty() {
                     assert!(
                         round.is_complete(),
                         "second round should have completed after signer {} receiving partial signature {}",
@@ -654,13 +653,12 @@ mod tests {
 
         // Test supplying signatures at wrong indices
         assert_eq!(
-            second_rounds[0].receive_signature(2, partial_signatures[1].clone()),
+            second_rounds[0].receive_signature(2, partial_signatures[1]),
             Err(RoundContributionError::invalid_signature(2)),
             "receiving a valid partial signature for the wrong signer should fail"
         );
         assert_eq!(
-            second_rounds[0]
-                .receive_signature(partial_signatures.len() + 1, partial_signatures[1].clone()),
+            second_rounds[0].receive_signature(partial_signatures.len() + 1, partial_signatures[1]),
             Err(RoundContributionError::out_of_range(
                 partial_signatures.len() + 1,
                 partial_signatures.len()
@@ -675,7 +673,7 @@ mod tests {
             .map(|(i, round)| {
                 round
                     .finalize()
-                    .expect(&format!("failed to finalize second round for signer {}", i))
+                    .unwrap_or_else(|_| panic!("failed to finalize second round for signer {}", i))
             })
             .collect();
 
