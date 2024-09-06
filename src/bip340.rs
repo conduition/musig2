@@ -42,7 +42,7 @@ pub fn sign_solo_adaptor(
 
     let h: [u8; 32] = tagged_hashes::BIP0340_AUX_TAG_HASHER
         .clone()
-        .chain_update(&nonce_seed.0)
+        .chain_update(nonce_seed.0)
         .finalize()
         .into();
 
@@ -50,8 +50,8 @@ pub fn sign_solo_adaptor(
 
     let rand: [u8; 32] = tagged_hashes::BIP0340_NONCE_TAG_HASHER
         .clone()
-        .chain_update(&t)
-        .chain_update(&pubkey.serialize_xonly())
+        .chain_update(t)
+        .chain_update(pubkey.serialize_xonly())
         .chain_update(message.as_ref())
         .finalize()
         .into();
@@ -273,11 +273,11 @@ pub fn verify_batch(rows: &[BatchVerificationRow]) -> Result<(), VerifyError> {
         // we're not explicitly seeding the RNG with the pubkey, nonce, and message
         // as suggested by BIP340.
         for row in rows {
-            seed_hash.update(&row.challenge.serialize());
+            seed_hash.update(row.challenge.serialize());
         }
 
         for row in rows {
-            seed_hash.update(&row.s.serialize());
+            seed_hash.update(row.s.serialize());
         }
         rand::rngs::StdRng::from_seed(seed_hash.finalize().into())
     };
@@ -285,7 +285,7 @@ pub fn verify_batch(rows: &[BatchVerificationRow]) -> Result<(), VerifyError> {
     let mut lhs = MaybeScalar::Zero;
     let mut rhs_terms = Vec::<MaybePoint>::with_capacity(rows.len() * 2);
 
-    for (i, row) in rows.into_iter().enumerate() {
+    for (i, row) in rows.iter().enumerate() {
         let random = if i == 0 {
             Scalar::one()
         } else {
@@ -357,18 +357,21 @@ mod tests {
             };
 
             let test_vec_signature: [u8; 64] = base16ct::mixed::decode_vec(&record.signature)
-                .expect(&format!("invalid signature hex: {}", record.signature))
+                .unwrap_or_else(|_| panic!("invalid signature hex: {}", record.signature))
                 .try_into()
                 .expect("invalid signature length");
 
             if let Some(seckey) = record.seckey {
-                let aux_rand = <[u8; 32]>::try_from(record.aux_rand.as_slice()).expect(&format!(
-                    "invalid aux_rand: {}",
-                    base16ct::lower::encode_string(&record.aux_rand)
-                ));
+                let aux_rand =
+                    <[u8; 32]>::try_from(record.aux_rand.as_slice()).unwrap_or_else(|_| {
+                        panic!(
+                            "invalid aux_rand: {}",
+                            base16ct::lower::encode_string(&record.aux_rand)
+                        )
+                    });
 
                 let created_signature: CompactSignature =
-                    sign_solo(seckey, &record.message, &aux_rand);
+                    sign_solo(seckey, &record.message, aux_rand);
 
                 assert_eq!(
                     created_signature.to_bytes(),
@@ -383,7 +386,7 @@ mod tests {
                     let adaptor_secret = MaybeScalar::Valid(seckey); // arbitrary secret
                     let adaptor_point = adaptor_secret * G;
                     let adaptor_signature =
-                        sign_solo_adaptor(seckey, &record.message, &aux_rand, adaptor_point);
+                        sign_solo_adaptor(seckey, &record.message, aux_rand, adaptor_point);
 
                     verify_single_adaptor(
                         pubkey,
@@ -409,10 +412,12 @@ mod tests {
             let verify_result = verify_single(pubkey, test_vec_signature, &record.message);
             match record.verification_result.as_str() {
                 "TRUE" => {
-                    verify_result.expect(&format!(
-                        "verification should pass for signature {} - {}",
-                        &record.signature, record.comment,
-                    ));
+                    verify_result.unwrap_or_else(|_| {
+                        panic!(
+                            "verification should pass for signature {} - {}",
+                            &record.signature, record.comment
+                        )
+                    });
                     valid_sigs_batch.push(BatchVerificationRow::from_signature(
                         pubkey,
                         record.message,

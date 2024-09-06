@@ -6,7 +6,7 @@ Adaptor signatures allow signers to create Schnorr signatures which can be verif
 
 ## MuSig Example
 
-Here we demonstrate a group of MuSig2 signers adaptor-signing the same message. The final signature which the group constructs is an [`AdaptorSignature`][crate::AdaptorSignature], which they cannot use until it has been decrypted (AKA 'adapted') by the correct adaptor secret (a scalar).
+Here we demonstrate a group of MuSig2 signers adaptor-signing the same message. The final signature which the group constructs is an [`AdaptorSignature`], which they cannot use until it has been decrypted (AKA 'adapted') by the correct adaptor secret (a scalar).
 
 ```rust
 use secp::{MaybeScalar, Point, Scalar};

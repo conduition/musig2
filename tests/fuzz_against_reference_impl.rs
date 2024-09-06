@@ -4,14 +4,13 @@ use secp::{Point, Scalar};
 use musig2::{AggNonce, KeyAggContext, PartialSignature, SecNonce, SCHNORR_SIGNATURE_SIZE};
 
 fn run_reference_code(code: &str) -> Vec<u8> {
-    let script = String::from(
-        [
-            "import reference",
-            "from binascii import hexlify, unhexlify",
-            "from sys import stdout\n\n",
-        ]
-        .join("\n"),
-    ) + code;
+    let script = [
+        "import reference",
+        "from binascii import hexlify, unhexlify",
+        "from sys import stdout\n\n",
+    ]
+    .join("\n")
+        + code;
 
     let error_message = format!("failed to run reference code:\n{}", code);
 
@@ -63,8 +62,8 @@ fn test_key_aggregation() {
 
     // Initialize a random array of pubkeys.
     let mut all_pubkeys = [Point::generator(); 6];
-    for i in 0..all_pubkeys.len() {
-        all_pubkeys[i] *= Scalar::random(&mut rng);
+    for pubkey in &mut all_pubkeys {
+        *pubkey *= Scalar::random(&mut rng);
     }
 
     const ITERATIONS: usize = 5;
@@ -102,15 +101,17 @@ for indexes in generated_indexes:
             .collect();
 
         let expected_pubkey_bytes = &reference_code_output[(i * 33)..(i * 33 + 33)];
-        let expected_pubkey = Point::from_slice(expected_pubkey_bytes).expect(&format!(
-            "error decoding aggregated public key from reference implementation: {}",
-            base16ct::lower::encode_string(expected_pubkey_bytes)
-        ));
+        let expected_pubkey = Point::from_slice(expected_pubkey_bytes).unwrap_or_else(|_| {
+            panic!(
+                "error decoding aggregated public key from reference implementation: {}",
+                base16ct::lower::encode_string(expected_pubkey_bytes)
+            )
+        });
 
         let pubkeys_json = serde_json::to_string(&pubkeys).unwrap();
 
         let our_pubkey: Point = KeyAggContext::new(pubkeys)
-            .expect(&format!("failed to aggregate pubkeys: {}", pubkeys_json))
+            .unwrap_or_else(|_| panic!("failed to aggregate pubkeys: {}", pubkeys_json))
             .aggregated_pubkey();
 
         assert_eq!(
@@ -128,8 +129,8 @@ fn test_signing() {
     let mut rng = rand::thread_rng();
 
     let mut all_seckeys = [Scalar::one(); 4];
-    for i in 0..all_seckeys.len() {
-        all_seckeys[i] = Scalar::random(&mut rng);
+    for seckey in &mut all_seckeys {
+        *seckey = Scalar::random(&mut rng);
     }
 
     let all_pubkeys = all_seckeys
@@ -275,10 +276,12 @@ for i in range({ITERATIONS}):
                 &aggnonce,
                 message,
             )
-            .expect(&format!(
-                "failed to sign with randomly chosen keys and nonces: {}",
-                debug_json
-            ));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "failed to sign with randomly chosen keys and nonces: {}",
+                    debug_json
+                )
+            });
 
             let expected_partial_signature_bytes = &reference_code_output[cursor..cursor + 32];
             cursor += 32;
