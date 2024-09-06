@@ -8,7 +8,7 @@ Specifically, this crate implements [BIP-0327](https://github.com/bitcoin/bips/b
 
 ## ⚠️ Beta Status ⚠️
 
-This crate is in beta status. The latest release is a `v0.0.x` version number. Expect breaking changes and security fixes. Once this crate is stabilized, we will tag and release `v1.0.0`.
+This crate is in beta status. The latest release is a `v0.x.y` version number. Expect breaking changes and security fixes. Once this crate is stabilized, we will tag and release `v1.0.0`.
 
 ## Overview
 
