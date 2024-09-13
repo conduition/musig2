@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+  workflow_dispatch: null
+
+jobs:
+  check:
+    name: "Check the code compiles"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Check
+        run: cargo check
+
+  fmt:
+    name: "Cargo fmt"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: rustfmt
+        run: cargo fmt --all --check
+
+  clippy:
+    name: "Clippy"
+    needs: [check, fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Clippy default
+        run: make check-default
+      - name: Clippy all features
+        run: make check-mixed
+      - name: Clippy libsecp feature set
+        run: make check-secp256k1
+      - name: Clippy pure-rust feature set
+        run: make check-k256
+
+  docs:
+    needs: [check, fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: cargo doc
+        env:
+          RUSTDOCFLAGS: "-D rustdoc::all -A rustdoc::private-doc-tests"
+        run: cargo doc --all-features --no-deps
+
+  test:
+    needs: [check, fmt, clippy]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, beta]
+        recipe:
+          - "test-default"
+          - "test-mixed"
+          - "test-secp256k1"
+          - "test-k256"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Run tests
+        run: make ${{ matrix.recipe }}
