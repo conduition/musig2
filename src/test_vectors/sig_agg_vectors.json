@@ -45,7 +45,7 @@
             "is_xonly": [],
             "psig_indices": [
                 0,
-                1
+                2
             ],
             "expected": "041DA22223CE65C92C9A0D6C2CAC828AAF1EEE56304FEC371DDF91EBB2B9EF0912F1038025857FEDEB3FF696F8B99FA4BB2C5812F6095A2E0004EC99CE18DE1E"
         },
