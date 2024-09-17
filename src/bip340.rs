@@ -42,7 +42,7 @@ pub fn sign_solo_adaptor(
 
     let h: [u8; 32] = tagged_hashes::BIP0340_AUX_TAG_HASHER
         .clone()
-        .chain_update(nonce_seed.0)
+        .chain_update(&nonce_seed.0)
         .finalize()
         .into();
 
