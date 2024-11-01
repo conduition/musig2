@@ -357,14 +357,14 @@ mod secp256k1_conversions {
     impl TryFrom<secp256k1::schnorr::Signature> for CompactSignature {
         type Error = DecodeError<Self>;
         fn try_from(signature: secp256k1::schnorr::Signature) -> Result<Self, Self::Error> {
-            Self::try_from(signature.serialize())
+            Self::try_from(signature.to_byte_array())
         }
     }
 
     impl TryFrom<secp256k1::schnorr::Signature> for LiftedSignature {
         type Error = DecodeError<Self>;
         fn try_from(signature: secp256k1::schnorr::Signature) -> Result<Self, Self::Error> {
-            Self::try_from(signature.serialize())
+            Self::try_from(signature.to_byte_array())
         }
     }
 
