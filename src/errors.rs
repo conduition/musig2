@@ -355,6 +355,8 @@ impl<T> fmt::Display for DecodeError<T> {
     }
 }
 
+impl<T: fmt::Debug> std::error::Error for DecodeError<T> {}
+
 impl<T> From<secp::errors::InvalidPointBytes> for DecodeError<T> {
     fn from(_: secp::errors::InvalidPointBytes) -> Self {
         DecodeError::new(DecodeFailureReason::InvalidPoint)
