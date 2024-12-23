@@ -135,6 +135,9 @@ pub fn sign_partial<T: From<PartialSignature>>(
 /// to be valid once it is adapted with the discrete log (secret key)
 /// of `adaptor_point`.
 ///
+/// Note that partial signatures are _not_ unforgeable!
+/// Validity of a partial signature should not be relied on for this property.
+///
 /// Returns an error if the given public key doesn't belong to the
 /// `key_agg_ctx`, or if the signature is invalid.
 pub fn verify_partial_adaptor(
@@ -186,6 +189,9 @@ pub fn verify_partial_adaptor(
 /// If `verify_partial` succeeds for every signature in
 /// a signing session, the resulting aggregated signature is guaranteed
 /// to be valid.
+///
+/// Note that partial signatures are _not_ unforgeable!
+/// Validity of a partial signature should not be relied on for this property.
 ///
 /// This function is effectively the same as invoking [`verify_partial_adaptor`]
 /// but passing [`MaybePoint::Infinity`] as the adaptor point.
