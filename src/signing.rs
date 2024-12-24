@@ -137,6 +137,7 @@ pub fn sign_partial<T: From<PartialSignature>>(
 ///
 /// Note that partial signatures are _not_ unforgeable!
 /// Validity of a partial signature should not be relied on for this property.
+/// See <https://gist.github.com/AdamISZ/ca974ed67889cedc738c4a1f65ff620b> for details.
 ///
 /// Returns an error if the given public key doesn't belong to the
 /// `key_agg_ctx`, or if the signature is invalid.
@@ -192,6 +193,7 @@ pub fn verify_partial_adaptor(
 ///
 /// Note that partial signatures are _not_ unforgeable!
 /// Validity of a partial signature should not be relied on for this property.
+/// See <https://gist.github.com/AdamISZ/ca974ed67889cedc738c4a1f65ff620b> for details.
 ///
 /// This function is effectively the same as invoking [`verify_partial_adaptor`]
 /// but passing [`MaybePoint::Infinity`] as the adaptor point.
