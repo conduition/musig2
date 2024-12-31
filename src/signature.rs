@@ -370,13 +370,13 @@ mod secp256k1_conversions {
 
     impl From<CompactSignature> for secp256k1::schnorr::Signature {
         fn from(signature: CompactSignature) -> Self {
-            Self::from_slice(&signature.to_bytes()).unwrap() // Never fails
+            Self::from_byte_array(signature.to_bytes())
         }
     }
 
     impl From<LiftedSignature> for secp256k1::schnorr::Signature {
         fn from(signature: LiftedSignature) -> Self {
-            Self::from_slice(&signature.to_bytes()).unwrap() // Never fails
+            Self::from_byte_array(signature.to_bytes())
         }
     }
 }
