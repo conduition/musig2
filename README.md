@@ -17,7 +17,7 @@ If you're not already familiar with MuSig2, the process of cooperative signing r
 1. All signers share their public keys with one-another. The group computes an _aggregated public key_ which they collectively control.
 2. In the **first signing round,** signers generate and share _nonces_ (random numbers) with one-another. These nonces have both secret and public versions. Only the public nonce (AKA `PubNonce`) should be shared, while the corresponding secret nonce (AKA `SecNonce`) must be kept secret.
 3. Once every signer has received the public nonces of every other signer, each signer makes a _partial signature_ for a message using their secret key and secret nonce.
-4. In the **second signing round,** signers share their partial signatures with one-another. Partial signatures can be verified to place blame on misbehaving signers.
+4. In the **second signing round,** signers share their partial signatures with one-another. Partial signatures can be verified to place blame on misbehaving signers (but are not themselves unforgeable).
 5. A valid set of partial signatures can be aggregated into a final signature, which is just a normal [Schnorr signature](https://en.wikipedia.org/wiki/Schnorr_signature), valid under the aggregated public key.
 
 ## Choice of Backbone
