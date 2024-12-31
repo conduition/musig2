@@ -413,7 +413,7 @@ mod tests {
                 sign_partial::<PartialSignature>(
                     &key_agg_ctx,
                     vectors.seckey,
-                    secnonce.clone(),
+                    secnonce,
                     &aggregated_nonce,
                     message,
                 ),

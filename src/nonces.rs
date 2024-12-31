@@ -946,7 +946,7 @@ mod tests {
         let s3: MaybeScalar = crate::sign_partial(
             &key_agg_ctx,
             alice_seckey,
-            alice_secnonce.clone(),
+            alice_secnonce,
             &aggnonce_3,
             message,
         )
