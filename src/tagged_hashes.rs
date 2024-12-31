@@ -33,8 +33,8 @@
 //! assert_eq!(hash, expected);
 //! ```
 
-use once_cell::sync::Lazy;
 use sha2::Sha256;
+use std::sync::LazyLock;
 
 use sha2::Digest as _;
 
@@ -107,80 +107,80 @@ const TAPROOT_TWEAK_TAG_DIGEST: [u8; 32] = [
 /// ```notrust
 /// sha256(b"KeyAgg list") || sha256(b"KeyAgg list")
 /// ```
-pub static KEYAGG_LIST_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(KEYAGG_LIST_TAG_DIGEST));
+pub static KEYAGG_LIST_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(KEYAGG_LIST_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"KeyAgg coefficient") || sha256(b"KeyAgg coefficient")
 /// ```
-pub static KEYAGG_COEFF_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(KEYAGG_COEFF_TAG_DIGEST));
+pub static KEYAGG_COEFF_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(KEYAGG_COEFF_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"MuSig/aux") || sha256(b"MuSig/aux")
 /// ```
-pub static MUSIG_AUX_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(MUSIG_AUX_TAG_DIGEST));
+pub static MUSIG_AUX_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(MUSIG_AUX_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"MuSig/nonce") || sha256(b"MuSig/nonce")
 /// ```
-pub static MUSIG_NONCE_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(MUSIG_NONCE_TAG_DIGEST));
+pub static MUSIG_NONCE_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(MUSIG_NONCE_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"MuSig/noncecoef") || sha256(b"MuSig/noncecoef")
 /// ```
-pub static MUSIG_NONCECOEF_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(MUSIG_NONCECOEF_TAG_DIGEST));
+pub static MUSIG_NONCECOEF_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(MUSIG_NONCECOEF_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"BIP0340/aux") || sha256(b"BIP0340/aux")
 /// ```
-pub static BIP0340_AUX_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(BIP0340_AUX_TAG_DIGEST));
+pub static BIP0340_AUX_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(BIP0340_AUX_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"BIP0340/nonce") || sha256(b"BIP0340/nonce")
 /// ```
-pub static BIP0340_NONCE_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(BIP0340_NONCE_TAG_DIGEST));
+pub static BIP0340_NONCE_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(BIP0340_NONCE_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"BIP0340/challenge") || sha256(b"BIP0340/challenge")
 /// ```
-pub static BIP0340_CHALLENGE_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(BIP0340_CHALLENGE_TAG_DIGEST));
+pub static BIP0340_CHALLENGE_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(BIP0340_CHALLENGE_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"BIP0340/batch") || sha256(b"BIP0340/batch")
 /// ```
-pub static BIP0340_BATCH_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(BIP0340_BATCH_TAG_DIGEST));
+pub static BIP0340_BATCH_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(BIP0340_BATCH_TAG_DIGEST));
 
 /// A `sha2::Sha256` hash engine with its state initialized to:
 ///
 /// ```notrust
 /// sha256(b"TapTweak") || sha256(b"TapTweak")
 /// ```
-pub static TAPROOT_TWEAK_TAG_HASHER: Lazy<Sha256> =
-    Lazy::new(|| with_tag_hash_prefix(TAPROOT_TWEAK_TAG_DIGEST));
+pub static TAPROOT_TWEAK_TAG_HASHER: LazyLock<Sha256> =
+    LazyLock::new(|| with_tag_hash_prefix(TAPROOT_TWEAK_TAG_DIGEST));
 
 #[cfg(test)]
 mod tests {
