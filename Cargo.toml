@@ -16,7 +16,7 @@ hmac = { version = "0.12", default-features = false, features = [] }
 k256 = { version = "0.13", default-features = false, optional = true }
 once_cell = { version = "1.18", default-features = false }
 rand = { version = "0.8", optional = true, default-features = false, features = ["std_rng"] }
-secp = { version = "0.4", default-features = false }
+secp = { version = "0.5", default-features = false }
 secp256k1 = { version = "0.30", optional = true, default-features = false }
 serde = { version = "1.0", default-features = false, optional = true }
 serdect = { version = "0.3", default-features = false, optional = true, features = ["alloc"] }
@@ -29,7 +29,7 @@ serde_json = "1.0"
 csv = "1.3"
 serdect = "0.3"
 rand = "0.8"
-secp = { version = "0.4", default-features = false, features = ["serde", "rand", "secp256k1-invert"]  }
+secp = { version = "0.5", default-features = false, features = ["serde", "rand", "secp256k1-invert"]  }
 
 [features]
 default = ["secp256k1"]
