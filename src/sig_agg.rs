@@ -1,5 +1,6 @@
 use secp::{MaybePoint, MaybeScalar, Point, G};
 
+use std::ops::{Neg, Not};
 use crate::errors::VerifyError;
 use crate::{
     compute_challenge_hash_tweak, AdaptorSignature, AggNonce, KeyAggContext, LiftedSignature,
@@ -24,8 +25,7 @@ pub fn aggregate_partial_adaptor_signatures<S: Into<PartialSignature>>(
     let adaptor_point: MaybePoint = adaptor_point.into();
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
-    let final_nonce: Point = aggregated_nonce.final_nonce(b);
+    let final_nonce: Point = aggregated_nonce.final_nonce();
     let adapted_nonce = final_nonce + adaptor_point;
     let nonce_x_bytes = adapted_nonce.serialize_xonly();
     let e: MaybeScalar = compute_challenge_hash_tweak(&nonce_x_bytes, &aggregated_pubkey, &message);
@@ -53,6 +53,62 @@ pub fn aggregate_partial_adaptor_signatures<S: Into<PartialSignature>>(
     };
     Ok(adaptor_sig)
 }
+pub fn aggregate_partial_adaptor_signatures_final_nonce<S: Into<PartialSignature>>(
+    key_agg_ctx: &KeyAggContext,
+    final_nonce: Point,
+    adaptor_point: impl Into<MaybePoint>,
+    partial_signatures: impl IntoIterator<Item = S>,
+    message: impl AsRef<[u8]>,
+) -> Result<AdaptorSignature, VerifyError> {
+
+    let adaptor_point: MaybePoint = adaptor_point.into();
+    let aggregated_pubkey = key_agg_ctx.pubkey;
+
+    let adapted_nonce = final_nonce + adaptor_point;
+    let nonce_x_bytes = adapted_nonce.serialize_xonly();
+    let e: MaybeScalar = compute_challenge_hash_tweak(&nonce_x_bytes, &aggregated_pubkey, &message);
+
+    let agg = partial_signatures
+        .into_iter()
+        .map(|sig| sig.into())
+        .sum::<PartialSignature>();
+
+    let aggregated_signature = agg + (e * key_agg_ctx.tweak_acc).negate_if(aggregated_pubkey.parity());
+
+    println!("s: {}", hex::encode(aggregated_signature.serialize()));
+
+    let neg_aggregated_signature = agg + (e * key_agg_ctx.tweak_acc).negate_if(aggregated_pubkey.parity().not());
+
+    let effective_nonce = if adapted_nonce.has_even_y() {
+        final_nonce
+    } else {
+        -final_nonce
+    };
+
+    println!("=======signatire check=======");
+    println!("final_nonce: {}", final_nonce);
+    println!("effective_nonce: {}", effective_nonce);
+    println!("e: {}", hex::encode(e.serialize()));
+    println!("agg_pubkeyb: {}", aggregated_pubkey);
+    println!("agg_pubkey.to_even_y(): {}", aggregated_pubkey.to_even_y());
+    let aggG = aggregated_signature * G;
+    println!("aggregated_signature * G={}. Even_y={}. to_even_y={}", aggG, aggG.has_even_y(), aggG.to_even_y());
+    let negAggG = neg_aggregated_signature * G;
+    println!("neg_aggregated_signature * G={}. Even_y={}. to_even_y={}", negAggG, negAggG.has_even_y(), negAggG.to_even_y());
+    println!("effective_nonce + e * aggregated_pubkey.to_even_y()={}", effective_nonce + e * aggregated_pubkey.to_even_y());
+    // Ensure the signature will verify as valid.
+    if aggregated_signature * G != effective_nonce + e * aggregated_pubkey.to_even_y() {
+        println!("=======END signatire check=======");
+        return Err(VerifyError::BadSignature);
+    }
+
+    let adaptor_sig = AdaptorSignature {
+        R: MaybePoint::Valid(final_nonce),
+        s: aggregated_signature,
+    };
+    Ok(adaptor_sig)
+}
+
 
 /// Aggregate a collection of partial signatures together into a final
 /// signature on a given `message`, valid under the aggregated public
@@ -79,6 +135,30 @@ where
     .adapt(MaybeScalar::Zero)
     .map(T::from)
     .expect("aggregating with empty adaptor should never result in an adaptor failure");
+
+    Ok(sig)
+}
+
+pub fn aggregate_partial_signatures_final_nonce<S, T>(
+    key_agg_ctx: &KeyAggContext,
+    final_nonce: Point,
+    partial_signatures: impl IntoIterator<Item = S>,
+    message: impl AsRef<[u8]>,
+) -> Result<T, VerifyError>
+where
+    S: Into<PartialSignature>,
+    T: From<LiftedSignature>,
+{
+    let sig = aggregate_partial_adaptor_signatures_final_nonce(
+        key_agg_ctx,
+        final_nonce,
+        MaybePoint::Infinity,
+        partial_signatures,
+        message,
+    )?
+        .adapt(MaybeScalar::Zero)
+        .map(T::from)
+        .expect("aggregating with empty adaptor should never result in an adaptor failure");
 
     Ok(sig)
 }

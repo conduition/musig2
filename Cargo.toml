@@ -12,6 +12,7 @@ include = ["/src", "!/src/test_vectors", "*.md"]
 
 [dependencies]
 base16ct = { version = "0.2", default-features = false, features = ["alloc"] }
+hex = "0.4.3"
 hmac = { version = "0.12", default-features = false, features = [] }
 k256 = { version = "0.13", default-features = false, optional = true }
 once_cell = { version = "1.18", default-features = false }

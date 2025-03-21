@@ -1,5 +1,6 @@
 use crate::errors::{SigningError, VerifyError};
 use crate::{tagged_hashes, AggNonce, KeyAggContext, PubNonce, SecNonce};
+use std::ops::{Neg, Not};
 
 use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
@@ -64,8 +65,7 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
 
-    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
-    let final_nonce: Point = aggregated_nonce.final_nonce(b);
+    let final_nonce: Point = aggregated_nonce.final_nonce();
     let adapted_nonce = final_nonce + adaptor_point;
 
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
@@ -80,7 +80,7 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     // else:
     //   k = (n-k1) + b(n-k2)
     //     = n - (k1 + b*k2)
-    let secnonce_sum = (secnonce.k1 + b * secnonce.k2).negate_if(adapted_nonce.parity());
+    let secnonce_sum = (secnonce.k1/* + b * secnonce.k2*/).negate_if(adapted_nonce.parity());
 
     // s = k + e*a*d
     let partial_signature = secnonce_sum + (e * key_coeff * d);
@@ -93,6 +93,68 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
         pubkey,
         &pubnonce,
         &message,
+    )?;
+
+    Ok(T::from(partial_signature))
+}
+
+pub fn sign_partial_challenge<T: From<PartialSignature>>(
+    key_agg_ctx: &KeyAggContext,
+    seckey: impl Into<Scalar>,
+    secnonce: SecNonce,
+    final_nonce: MaybePoint,
+    e: MaybeScalar,
+) -> Result<T, SigningError> {
+    let adaptor_point: MaybePoint = MaybePoint::Infinity;
+    let seckey: Scalar = seckey.into();
+    let pubkey = seckey.base_point_mul();
+
+    // As a side-effect, looking up the cached key coefficient also confirms
+    // the individual key is indeed part of the aggregated key.
+    let key_coeff = key_agg_ctx
+        .key_coefficient(pubkey)
+        .ok_or(SigningError::UnknownKey)?;
+
+    let aggregated_pubkey = key_agg_ctx.pubkey;
+    let pubnonce = secnonce.public_nonce();
+
+    let adapted_nonce = final_nonce + adaptor_point;
+
+    // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
+    // has odd parity.
+    let parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
+    let d = seckey.negate_if(parity);
+
+    // if has_even_Y(R):
+    //   k = k1 + b*k2
+    // else:
+    //   k = (n-k1) + b(n-k2)
+    //     = n - (k1 + b*k2)
+    let r = secnonce.k1;
+    println!("secnonce.k1={}", hex::encode(r));
+    let secnonce_sum = (secnonce.k1/* + b * secnonce.k2*/).negate_if(adapted_nonce.parity());
+    println!("secnonce sum: {}", hex::encode(secnonce_sum.serialize()));
+    println!("seckey: {}", hex::encode(seckey.serialize()));
+    println!("d: {}", hex::encode(d.serialize()));
+    let rx =  r + d;
+    let rx_neg =  r - d;
+    let r_neg_x_neg =  -r - d;
+
+    println!("r+x={} (r+x)*G={}", hex::encode(rx.serialize()), rx*G);
+    println!("r-x={} (r-x)*G={}", hex::encode(rx_neg.serialize()), rx_neg*G);
+    println!("-r-x={} (-r-x)*G={}", hex::encode(r_neg_x_neg.serialize()), r_neg_x_neg*G);
+
+    // s = k + e*a*d
+    let partial_signature = secnonce_sum + (e * key_coeff * d);
+
+    verify_partial_challenge(
+        key_agg_ctx,
+        partial_signature,
+        final_nonce,
+        adaptor_point,
+        pubkey,
+        &pubnonce,
+        e,
     )?;
 
     Ok(T::from(partial_signature))
@@ -160,11 +222,10 @@ pub fn verify_partial_adaptor(
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let b: MaybeScalar = aggregated_nonce.nonce_coefficient(aggregated_pubkey, &message);
-    let final_nonce: Point = aggregated_nonce.final_nonce(b);
+    let final_nonce: Point = aggregated_nonce.final_nonce();
     let adapted_nonce = final_nonce + adaptor_point.into();
 
-    let mut effective_nonce = individual_pubnonce.R1 + b * individual_pubnonce.R2;
+    let mut effective_nonce = individual_pubnonce.R1;
 
     // Don't need constant time ops here as adapted_nonce is public.
     if adapted_nonce.has_odd_y() {
@@ -181,6 +242,54 @@ pub fn verify_partial_adaptor(
     if partial_signature * G != effective_nonce + challenge_point {
         return Err(VerifyError::BadSignature);
     }
+
+    Ok(())
+}
+
+pub fn verify_partial_challenge(
+    key_agg_ctx: &KeyAggContext,
+    partial_signature: impl Into<PartialSignature>,
+    final_nonce: MaybePoint,
+    adaptor_point: impl Into<MaybePoint>,
+    individual_pubkey: impl Into<Point>,
+    individual_pubnonce: &PubNonce,
+    e: MaybeScalar,
+) -> Result<(), VerifyError> {
+    let partial_signature: MaybeScalar = partial_signature.into();
+
+    // As a side-effect, looking up the cached effective key also confirms
+    // the individual key is indeed part of the aggregated key.
+    let effective_pubkey: MaybePoint = key_agg_ctx
+        .effective_pubkey(individual_pubkey)
+        .ok_or(VerifyError::UnknownKey)?;
+
+    let aggregated_pubkey = key_agg_ctx.pubkey;
+
+    let adapted_nonce = final_nonce + adaptor_point.into();
+
+    let mut effective_nonce = individual_pubnonce.R1;
+
+    // Don't need constant time ops here as adapted_nonce is public.
+    if adapted_nonce.has_odd_y() {
+        effective_nonce = -effective_nonce;
+    }
+
+    println!("=========== partial verification =============");
+
+
+    // s * G == R + (g * gacc * e * a * P)
+    let challenge_parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
+    let challenge_point = (e * effective_pubkey).negate_if(challenge_parity);
+
+    println!("partial signature: {}", hex::encode(partial_signature.serialize()));
+    println!("partial signature * G: {}", partial_signature * G);
+    println!("effective_nonce: {}", hex::encode(effective_nonce.serialize_xonly()));
+    println!("challenge point: {}", challenge_point);
+
+    if partial_signature * G != effective_nonce + challenge_point {
+        return Err(VerifyError::BadSignature);
+    }
+    println!("=========== END partial verification =============");
 
     Ok(())
 }

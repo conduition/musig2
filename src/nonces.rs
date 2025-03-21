@@ -417,7 +417,7 @@ impl<'snb> SecNonceBuilder<'snb> {
 /// random number generator via [`SecNonce::generate`].
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SecNonce {
-    pub(crate) k1: Scalar,
+    pub k1: Scalar,
     pub(crate) k2: Scalar,
 }
 
@@ -625,12 +625,11 @@ impl AggNonce {
     /// Most use-cases will not need to invoke this method. Instead use
     /// [`sign_solo`][crate::sign_solo] or [`sign_partial`][crate::sign_partial]
     /// to create signatures.
-    pub fn final_nonce<P>(&self, nonce_coeff: impl Into<MaybeScalar>) -> P
+    pub fn final_nonce<P>(&self) -> P
     where
         P: From<Point>,
     {
-        let nonce_coeff: MaybeScalar = nonce_coeff.into();
-        let aggnonce_sum = self.R1 + (nonce_coeff * self.R2);
+        let aggnonce_sum = self.R1;
         P::from(match aggnonce_sum {
             MaybePoint::Infinity => Point::generator(),
             MaybePoint::Valid(p) => p,

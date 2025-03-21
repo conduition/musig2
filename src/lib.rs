@@ -37,9 +37,9 @@ pub use bip340::{sign_solo, verify_single};
 pub use key_agg::*;
 pub use nonces::*;
 pub use rounds::*;
-pub use sig_agg::aggregate_partial_signatures;
+pub use sig_agg::{aggregate_partial_signatures, aggregate_partial_signatures_final_nonce};
 pub use signature::*;
-pub use signing::{compute_challenge_hash_tweak, sign_partial, verify_partial, PartialSignature};
+pub use signing::{compute_challenge_hash_tweak, sign_partial, sign_partial_challenge, verify_partial, verify_partial_challenge, PartialSignature};
 
 #[cfg(test)]
 pub(crate) mod testhex;

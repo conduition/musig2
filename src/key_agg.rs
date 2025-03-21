@@ -27,7 +27,7 @@ pub struct KeyAggContext {
     pub(crate) ordered_pubkeys: Vec<Point>,
 
     /// A map of pubkeys to their indexes in the [`ordered_pubkeys`][Self::ordered_pubkeys]
-    /// field.
+    /// field3.
     pub(crate) pubkey_indexes: HashMap<Point, usize>,
 
     /// Cached key aggregation coefficients of individual pubkeys, in the
