@@ -1,6 +1,7 @@
 use crate::errors::{SigningError, VerifyError};
 use crate::{tagged_hashes, AggNonce, KeyAggContext, PubNonce, SecNonce};
 use std::ops::{Neg, Not};
+use subtle::Choice;
 
 use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
@@ -102,7 +103,7 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,
     secnonce: SecNonce,
-    final_nonce: MaybePoint,
+    nonce_parity: Choice,
     e: MaybeScalar,
 ) -> Result<T, SigningError> {
     let adaptor_point: MaybePoint = MaybePoint::Infinity;
@@ -118,8 +119,6 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
     let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
 
-    let adapted_nonce = final_nonce + adaptor_point;
-
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
     // has odd parity.
     let parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
@@ -132,7 +131,7 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
     //     = n - (k1 + b*k2)
     let r = secnonce.k1;
     println!("secnonce.k1={}", hex::encode(r));
-    let secnonce_sum = (secnonce.k1/* + b * secnonce.k2*/).negate_if(adapted_nonce.parity());
+    let secnonce_sum = (secnonce.k1/* + b * secnonce.k2*/).negate_if(nonce_parity);
     println!("secnonce sum: {}", hex::encode(secnonce_sum.serialize()));
     println!("seckey: {}", hex::encode(seckey.serialize()));
     println!("d: {}", hex::encode(d.serialize()));
@@ -150,7 +149,7 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
     verify_partial_challenge(
         key_agg_ctx,
         partial_signature,
-        final_nonce,
+        nonce_parity,
         adaptor_point,
         pubkey,
         &pubnonce,
@@ -249,7 +248,7 @@ pub fn verify_partial_adaptor(
 pub fn verify_partial_challenge(
     key_agg_ctx: &KeyAggContext,
     partial_signature: impl Into<PartialSignature>,
-    final_nonce: MaybePoint,
+    nonce_parity: Choice,
     adaptor_point: impl Into<MaybePoint>,
     individual_pubkey: impl Into<Point>,
     individual_pubnonce: &PubNonce,
@@ -265,14 +264,10 @@ pub fn verify_partial_challenge(
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
 
-    let adapted_nonce = final_nonce + adaptor_point.into();
-
     let mut effective_nonce = individual_pubnonce.R1;
 
     // Don't need constant time ops here as adapted_nonce is public.
-    if adapted_nonce.has_odd_y() {
-        effective_nonce = -effective_nonce;
-    }
+    effective_nonce = effective_nonce.negate_if(nonce_parity);
 
     println!("=========== partial verification =============");
 
