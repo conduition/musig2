@@ -100,29 +100,21 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
 }
 
 pub fn sign_partial_challenge<T: From<PartialSignature>>(
-    key_agg_ctx: &KeyAggContext,
+    key_coeff: MaybeScalar,
+    key_parity: Choice,
     seckey: impl Into<Scalar>,
     secnonce: SecNonce,
     nonce_parity: Choice,
     e: MaybeScalar,
 ) -> Result<T, SigningError> {
-    let adaptor_point: MaybePoint = MaybePoint::Infinity;
     let seckey: Scalar = seckey.into();
     let pubkey = seckey.base_point_mul();
 
-    // As a side-effect, looking up the cached key coefficient also confirms
-    // the individual key is indeed part of the aggregated key.
-    let key_coeff = key_agg_ctx
-        .key_coefficient(pubkey)
-        .ok_or(SigningError::UnknownKey)?;
-
-    let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
 
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
     // has odd parity.
-    let parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
-    let d = seckey.negate_if(parity);
+    let d = seckey.negate_if(key_parity);
 
     // if has_even_Y(R):
     //   k = k1 + b*k2
@@ -147,10 +139,10 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
     let partial_signature = secnonce_sum + (e * key_coeff * d);
 
     verify_partial_challenge(
-        key_agg_ctx,
+        key_coeff,
+        key_parity,
         partial_signature,
         nonce_parity,
-        adaptor_point,
         pubkey,
         &pubnonce,
         e,
@@ -246,23 +238,18 @@ pub fn verify_partial_adaptor(
 }
 
 pub fn verify_partial_challenge(
-    key_agg_ctx: &KeyAggContext,
+    key_coeff: MaybeScalar,
+    challenge_parity: Choice,
     partial_signature: impl Into<PartialSignature>,
     nonce_parity: Choice,
-    adaptor_point: impl Into<MaybePoint>,
     individual_pubkey: impl Into<Point>,
     individual_pubnonce: &PubNonce,
     e: MaybeScalar,
 ) -> Result<(), VerifyError> {
     let partial_signature: MaybeScalar = partial_signature.into();
 
-    // As a side-effect, looking up the cached effective key also confirms
-    // the individual key is indeed part of the aggregated key.
-    let effective_pubkey: MaybePoint = key_agg_ctx
-        .effective_pubkey(individual_pubkey)
-        .ok_or(VerifyError::UnknownKey)?;
-
-    let aggregated_pubkey = key_agg_ctx.pubkey;
+    let individual_pubkey: Point = individual_pubkey.into();
+    let effective_pubkey: MaybePoint = individual_pubkey * key_coeff;
 
     let mut effective_nonce = individual_pubnonce.R1;
 
@@ -271,10 +258,8 @@ pub fn verify_partial_challenge(
 
     println!("=========== partial verification =============");
 
-
     // s * G == R + (g * gacc * e * a * P)
-    let challenge_parity = aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc;
-    let challenge_point = (e * effective_pubkey).negate_if(challenge_parity);
+    let challenge_point: MaybePoint = (e * effective_pubkey).negate_if(challenge_parity);
 
     println!("partial signature: {}", hex::encode(partial_signature.serialize()));
     println!("partial signature * G: {}", partial_signature * G);
