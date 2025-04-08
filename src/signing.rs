@@ -101,7 +101,7 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
 
 pub fn sign_partial_challenge<T: From<PartialSignature>>(
     key_coeff: MaybeScalar,
-    key_parity: Choice,
+    challenge_parity: Choice,
     seckey: impl Into<Scalar>,
     secnonce: SecNonce,
     nonce_parity: Choice,
@@ -114,7 +114,7 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
 
     // `d` is negated if only one of the parity accumulator OR the aggregated pubkey
     // has odd parity.
-    let d = seckey.negate_if(key_parity);
+    let d = seckey.negate_if(challenge_parity);
 
     // if has_even_Y(R):
     //   k = k1 + b*k2
@@ -140,7 +140,7 @@ pub fn sign_partial_challenge<T: From<PartialSignature>>(
 
     verify_partial_challenge(
         key_coeff,
-        key_parity,
+        challenge_parity,
         partial_signature,
         nonce_parity,
         pubkey,

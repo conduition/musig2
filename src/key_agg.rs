@@ -368,6 +368,10 @@ impl KeyAggContext {
         T::from(self.pubkey)
     }
 
+    pub fn parity_acc(&self) -> subtle::Choice {
+        self.parity_acc
+    }
+
     /// Returns the aggregated pubkey without any tweaks.
     ///
     /// ```
