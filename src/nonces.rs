@@ -5,6 +5,12 @@ use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
 use sha2::Digest as _;
 
+/// The size of a serialized [`SecNonce`] in bytes.
+pub const SEC_NONCE_SIZE: usize = 64;
+
+/// The size of a serialized [`PubNonce`] in bytes.
+pub const PUB_NONCE_SIZE: usize = 66;
+
 /// Represents the primary source of entropy for building a [`SecNonce`].
 ///
 /// Often referred to as the variable `rand` in
@@ -446,7 +452,7 @@ impl SecNonce {
     /// - `aggregated_pubkey`: the aggregated public key.
     /// - `message`: the message which will be signed.
     /// - `extra_input`: arbitrary context data used to increase the entropy
-    ///    of the resulting nonces.
+    ///   of the resulting nonces.
     ///
     /// This implementation matches the specfication of nonce generation in BIP327,
     /// and all arguments are required. If you cannot supply all arguments
@@ -642,7 +648,7 @@ mod encodings {
     use super::*;
 
     impl BinaryEncoding for SecNonce {
-        type Serialized = [u8; 64];
+        type Serialized = [u8; SEC_NONCE_SIZE];
 
         /// Returns the binary serialization of `SecNonce`, which serializes
         /// both inner scalar values into a fixed-length 64-byte array.
@@ -650,7 +656,7 @@ mod encodings {
         /// Note that this serialization differs from the format suggested
         /// in BIP327, in that we do not include a public key.
         fn to_bytes(&self) -> Self::Serialized {
-            let mut serialized = [0u8; 64];
+            let mut serialized = [0u8; SEC_NONCE_SIZE];
             serialized[..32].clone_from_slice(&self.k1.serialize());
             serialized[32..].clone_from_slice(&self.k2.serialize());
             serialized
@@ -666,43 +672,43 @@ mod encodings {
             if bytes.len() != 64 && bytes.len() != 97 {
                 return Err(DecodeError::bad_length(bytes.len()));
             }
-            let k1 = Scalar::from_slice(&bytes[..32])?;
-            let k2 = Scalar::from_slice(&bytes[32..64])?;
+            let k1 = Scalar::from_slice(&bytes[..SEC_NONCE_SIZE / 2])?;
+            let k2 = Scalar::from_slice(&bytes[SEC_NONCE_SIZE / 2..SEC_NONCE_SIZE])?;
             Ok(SecNonce { k1, k2 })
         }
     }
 
     impl BinaryEncoding for PubNonce {
-        type Serialized = [u8; 66];
+        type Serialized = [u8; PUB_NONCE_SIZE];
 
         /// Returns the binary serialization of `PubNonce`, which serializes
         /// both inner points into a fixed-length 66-byte array.
         fn to_bytes(&self) -> Self::Serialized {
-            let mut bytes = [0u8; 66];
-            bytes[..33].clone_from_slice(&self.R1.serialize());
-            bytes[33..].clone_from_slice(&self.R2.serialize());
+            let mut bytes = [0u8; PUB_NONCE_SIZE];
+            bytes[..PUB_NONCE_SIZE / 2].clone_from_slice(&self.R1.serialize());
+            bytes[PUB_NONCE_SIZE / 2..].clone_from_slice(&self.R2.serialize());
             bytes
         }
 
         /// Parses a `PubNonce` from a serialized byte slice. This byte slice should
         /// be 66 bytes long, and encode two compressed, non-infinity curve points.
         fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError<Self>> {
-            if bytes.len() != 66 {
+            if bytes.len() != PUB_NONCE_SIZE {
                 return Err(DecodeError::bad_length(bytes.len()));
             }
-            let R1 = Point::from_slice(&bytes[..33])?;
-            let R2 = Point::from_slice(&bytes[33..])?;
+            let R1 = Point::from_slice(&bytes[..PUB_NONCE_SIZE / 2])?;
+            let R2 = Point::from_slice(&bytes[PUB_NONCE_SIZE / 2..])?;
             Ok(PubNonce { R1, R2 })
         }
     }
 
     impl BinaryEncoding for AggNonce {
-        type Serialized = [u8; 66];
+        type Serialized = [u8; PUB_NONCE_SIZE];
 
         /// Returns the binary serialization of `AggNonce`, which serializes
         /// both inner points into a fixed-length 66-byte array.
         fn to_bytes(&self) -> Self::Serialized {
-            let mut serialized = [0u8; 66];
+            let mut serialized = [0u8; PUB_NONCE_SIZE];
             serialized[..33].clone_from_slice(&self.R1.serialize());
             serialized[33..].clone_from_slice(&self.R2.serialize());
             serialized
@@ -711,18 +717,18 @@ mod encodings {
         /// Parses an `AggNonce` from a serialized byte slice. This byte slice should
         /// be 66 bytes long, and encode two compressed (possibly infinity) curve points.
         fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError<Self>> {
-            if bytes.len() != 66 {
+            if bytes.len() != PUB_NONCE_SIZE {
                 return Err(DecodeError::bad_length(bytes.len()));
             }
-            let R1 = MaybePoint::from_slice(&bytes[..33])?;
-            let R2 = MaybePoint::from_slice(&bytes[33..])?;
+            let R1 = MaybePoint::from_slice(&bytes[..PUB_NONCE_SIZE / 2])?;
+            let R2 = MaybePoint::from_slice(&bytes[PUB_NONCE_SIZE / 2..])?;
             Ok(AggNonce { R1, R2 })
         }
     }
 
-    impl_encoding_traits!(SecNonce, 64, 97);
-    impl_encoding_traits!(PubNonce, 66);
-    impl_encoding_traits!(AggNonce, 66);
+    impl_encoding_traits!(SecNonce, SEC_NONCE_SIZE, 97);
+    impl_encoding_traits!(PubNonce, PUB_NONCE_SIZE);
+    impl_encoding_traits!(AggNonce, PUB_NONCE_SIZE);
 
     // Do not implement Display for SecNonce.
     impl_hex_display!(PubNonce);
