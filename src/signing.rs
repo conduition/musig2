@@ -5,6 +5,9 @@ use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 
 use sha2::Digest as _;
 
+/// The size of a serialized partial signature in bytes.
+pub const PARTIAL_SIGNATURE_SIZE: usize = 32;
+
 /// Partial signatures are just scalars in the range `[0, n)`.
 ///
 /// See the documentation of [`secp::MaybeScalar`] for the

@@ -39,7 +39,10 @@ pub use nonces::*;
 pub use rounds::*;
 pub use sig_agg::aggregate_partial_signatures;
 pub use signature::*;
-pub use signing::{compute_challenge_hash_tweak, sign_partial, verify_partial, PartialSignature};
+pub use signing::{
+    compute_challenge_hash_tweak, sign_partial, verify_partial, PartialSignature,
+    PARTIAL_SIGNATURE_SIZE,
+};
 
 #[cfg(test)]
 pub(crate) mod testhex;
