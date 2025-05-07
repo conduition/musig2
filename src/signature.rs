@@ -260,8 +260,8 @@ mod encodings {
         /// serialized `s` scalar.
         fn to_bytes(&self) -> Self::Serialized {
             let mut serialized = [0u8; SCHNORR_SIGNATURE_SIZE];
-            serialized[..32].clone_from_slice(&self.rx);
-            serialized[32..].clone_from_slice(&self.s.serialize());
+            serialized[..SCHNORR_SIGNATURE_SIZE / 2].clone_from_slice(&self.rx);
+            serialized[SCHNORR_SIGNATURE_SIZE / 2..].clone_from_slice(&self.s.serialize());
             serialized
         }
 
