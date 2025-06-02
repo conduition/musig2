@@ -29,7 +29,7 @@ let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
 
 let message = "danger, will robinson!";
 
-let adaptor_secret = Scalar::random(&mut rand::thread_rng());
+let adaptor_secret = Scalar::random(&mut rand::rng());
 let adaptor_point = adaptor_secret.base_point_mul();
 
 // Using the functional API.
@@ -188,11 +188,11 @@ We also export single-signer adaptor signing logic.
 ```rust
 use secp::{MaybeScalar, Scalar};
 
-let seckey = Scalar::random(&mut rand::rngs::OsRng);
+let seckey = Scalar::random(&mut rand::rng());
 let message = "hello world!";
 
 // Create an adaptor signature, encrypted under a specific adaptor point.
-let adaptor_secret = Scalar::random(&mut rand::rngs::OsRng);
+let adaptor_secret = Scalar::random(&mut rand::rng());
 let adaptor_point = adaptor_secret.base_point_mul();
 let aux_rand = [0xAA; 32]; // Should use an actual RNG.
 let adaptor_signature =

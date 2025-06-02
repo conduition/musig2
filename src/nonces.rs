@@ -39,8 +39,7 @@ impl<T: rand::RngCore + rand::CryptoRng> From<&mut T> for NonceSeed {
     /// random bytes.
     fn from(rng: &mut T) -> NonceSeed {
         let mut bytes = [0u8; 32];
-        rng.try_fill_bytes(&mut bytes)
-            .expect("error generating secure secret nonce seed");
+        rng.fill_bytes(&mut bytes);
         NonceSeed(bytes)
     }
 }
@@ -198,13 +197,13 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// # #[cfg(feature = "rand")]
     /// // Sample the seed automatically
-    /// let secnonce = musig2::SecNonceBuilder::new(&mut rand::rngs::OsRng)
+    /// let secnonce = musig2::SecNonceBuilder::new(&mut rand::rng())
     ///     .with_message(b"hello world!")
     ///     .build();
     ///
     /// // Sample the seed manually
     /// let mut nonce_seed = [0u8; 32];
-    /// rand::rngs::OsRng.fill_bytes(&mut nonce_seed);
+    /// rand::rng().fill_bytes(&mut nonce_seed);
     /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed)
     ///     .with_message(b"hello world!")
     ///     .build();
@@ -447,7 +446,7 @@ impl SecNonce {
     ///
     /// - `nonce_seed`: the primary source of entropy used to generate the nonce.
     ///   Can be any type that converts to [`NonceSeed`], such as
-    ///   [`&mut rand::rngs::OsRng`][rand::rngs::OsRng] or `[u8; 32]`.
+    ///   [`&mut rand::rngs::ThreadRng`][rand::rngs::ThreadRng] or `[u8; 32]`.
     /// - `seckey`: the secret key which will be used to sign the message.
     /// - `aggregated_pubkey`: the aggregated public key.
     /// - `message`: the message which will be signed.
@@ -814,7 +813,7 @@ mod tests {
 
         for test_case in vectors.test_cases {
             let aggregated_pubkey =
-                Point::lift_x(&test_case.aggregated_pubkey).unwrap_or_else(|_| {
+                Point::lift_x(test_case.aggregated_pubkey).unwrap_or_else(|_| {
                     panic!(
                         "invalid aggregated xonly pubkey in test vector: {}",
                         base16ct::lower::encode_string(&test_case.aggregated_pubkey)

@@ -87,7 +87,7 @@ impl FirstRound {
     /// Generates the nonce using the given random seed value, which can
     /// be any type that converts to `NonceSeed`. Usually this would
     /// either be a `[u8; 32]` or any type that implements [`rand::RngCore`]
-    /// and [`rand::CryptoRng`], such as [`rand::rngs::OsRng`].
+    /// and [`rand::CryptoRng`], such as [`rand::rngs::ThreadRng`].
     /// If a static byte array is used as the seed, it should be generated
     /// using a cryptographically secure RNG and discarded after the `FirstRound`
     /// is created. Prefer using a [`rand::CryptoRng`] if possible, so that

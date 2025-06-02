@@ -106,7 +106,7 @@ let message = "hello interwebz!";
 
 // Normally this should be sampled securely from a CSPRNG.
 // let mut nonce_seed = [0u8; 32]
-// rand::rngs::OsRng.fill_bytes(&mut nonce_seed);
+// rand::rng().fill_bytes(&mut nonce_seed);
 let nonce_seed = [0xACu8; 32];
 
 let mut first_round = FirstRound::new(
@@ -690,7 +690,7 @@ d = (s - s') / a * (e + e')
 
 The [State-Machine API](#state-machine-api) is designed to avoid this possibility by computing and storing the [`SecNonce`] inside the [`FirstRound`] struct, and never exposing it directly to the downstream consumer.
 
-When using the `FirstRound` API, we recommend enabling the `rand` feature on this crate, and passing [`&mut rand::rngs::OsRng`][rand::rngs::OsRng] or [`&mut rand::thread_rng()`][rand::thread_rng] as the `nonce_seed` argument to [`FirstRound::new`]. This reduces the risk of accidental nonce reuse significantly.
+When using the `FirstRound` API, we recommend enabling the `rand` feature on this crate, and passing [`&mut rand::rng()`][rand::rngs::ThreadRng] as the `nonce_seed` argument to [`FirstRound::new`]. This reduces the risk of accidental nonce reuse significantly.
 
 <details>
     <summary><h2>Example</h2></summary>
@@ -724,7 +724,7 @@ use musig2::{FirstRound, SecNonceSpices};
 # #[cfg(feature = "rand")]
 let mut first_round = FirstRound::new(
     key_agg_ctx,
-    &mut rand::rngs::OsRng,
+    &mut rand::rng(),
     signer_index,
     SecNonceSpices::new()
         .with_seckey(seckey)

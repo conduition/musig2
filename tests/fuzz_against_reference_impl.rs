@@ -46,9 +46,9 @@ fn random_sample_indexes<R: Rng>(
 ) -> Vec<Vec<usize>> {
     (0..iterations)
         .map(|_| {
-            let count = rng.gen_range(1..max_count);
+            let count = rng.random_range(1..max_count);
             (0..count)
-                .map(|_| rng.gen_range(0..index_ceil))
+                .map(|_| rng.random_range(0..index_ceil))
                 .collect::<Vec<usize>>()
         })
         .collect()
@@ -58,7 +58,7 @@ fn random_sample_indexes<R: Rng>(
 /// chosen pubkey inputs.
 #[test]
 fn test_key_aggregation() {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Initialize a random array of pubkeys.
     let mut all_pubkeys = [Point::generator(); 6];
@@ -126,7 +126,7 @@ for indexes in generated_indexes:
 /// the reference implementation.
 #[test]
 fn test_signing() {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let mut all_seckeys = [Scalar::one(); 4];
     for seckey in &mut all_seckeys {

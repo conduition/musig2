@@ -47,7 +47,7 @@ impl CompactSignature {
     /// Lifts the nonce point X coordinate to a proper point with even parity,
     /// returning an error if the coordinate was not on the curve.
     pub fn lift_nonce(&self) -> Result<LiftedSignature, secp::errors::InvalidPointBytes> {
-        let R = Point::lift_x(&self.rx)?;
+        let R = Point::lift_x(self.rx)?;
         Ok(LiftedSignature { R, s: self.s })
     }
 }

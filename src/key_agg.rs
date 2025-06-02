@@ -926,7 +926,7 @@ mod tests {
     // parity randomly align to make incorrect parity-handling code succeed.
     #[test]
     fn secret_key_aggregation_random() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..16 {
             let seckeys = [
                 Scalar::random(&mut rng),

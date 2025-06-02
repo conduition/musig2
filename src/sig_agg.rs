@@ -200,9 +200,9 @@ mod tests {
 
         for _ in 0..ITERATIONS {
             let seckeys = [
-                Scalar::random(&mut rand::thread_rng()),
-                Scalar::random(&mut rand::thread_rng()),
-                Scalar::random(&mut rand::thread_rng()),
+                Scalar::random(&mut rand::rng()),
+                Scalar::random(&mut rand::rng()),
+                Scalar::random(&mut rand::rng()),
             ];
 
             let pubkeys = [
@@ -216,9 +216,9 @@ mod tests {
             let message = b"danger, will robinson!";
 
             let secnonces = [
-                SecNonce::random(&mut rand::thread_rng()),
-                SecNonce::random(&mut rand::thread_rng()),
-                SecNonce::random(&mut rand::thread_rng()),
+                SecNonce::random(&mut rand::rng()),
+                SecNonce::random(&mut rand::rng()),
+                SecNonce::random(&mut rand::rng()),
             ];
 
             let pubnonces = [
@@ -229,7 +229,7 @@ mod tests {
 
             let aggnonce = AggNonce::sum(&pubnonces);
 
-            let adaptor_secret = Scalar::random(&mut rand::thread_rng());
+            let adaptor_secret = Scalar::random(&mut rand::rng());
             let adaptor_point = adaptor_secret.base_point_mul();
 
             let partial_signatures: Vec<PartialSignature> = seckeys

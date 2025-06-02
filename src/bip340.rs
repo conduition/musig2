@@ -343,7 +343,7 @@ mod tests {
         for result in csv_reader.deserialize() {
             let record: TestVectorRecord = result.expect("failed to parse BIP340 test vector");
 
-            let pubkey = match Point::lift_x(&record.pubkey_x) {
+            let pubkey = match Point::lift_x(record.pubkey_x) {
                 Ok(p) => p,
                 Err(_) => {
                     if record.verification_result == "TRUE" {
