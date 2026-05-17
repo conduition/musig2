@@ -216,9 +216,9 @@ mod tests {
             let message = b"danger, will robinson!";
 
             let secnonces = [
-                SecNonce::random(&mut rand::rng()),
-                SecNonce::random(&mut rand::rng()),
-                SecNonce::random(&mut rand::rng()),
+                SecNonce::random(&mut rand::rng(), pubkeys[0]),
+                SecNonce::random(&mut rand::rng(), pubkeys[1]),
+                SecNonce::random(&mut rand::rng(), pubkeys[2]),
             ];
 
             let pubnonces = [

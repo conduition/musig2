@@ -6,7 +6,7 @@ use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
 use sha2::Digest as _;
 
 /// The size of a serialized [`SecNonce`] in bytes.
-pub const SEC_NONCE_SIZE: usize = 64;
+pub const SEC_NONCE_SIZE: usize = 97;
 
 /// The size of a serialized [`PubNonce`] in bytes.
 pub const PUB_NONCE_SIZE: usize = 66;
@@ -66,11 +66,16 @@ fn extra_input_length_check<T: AsRef<[u8]>>(extra_inputs: &[T]) {
 /// A set of optional parameters which can be provided to _spice up_ the
 /// entropy of the secret nonces generated for a signing session.
 ///
-/// These parameters are not functionally required for any operations after
-/// nonce generation - you can provide a different secret key in the `SecNonceSpices`
+/// These parameters are usually not functionally required for any operations
+/// after nonce generation. When the nonce builder already has the signer's
+/// public key, you can provide a different secret key in the `SecNonceSpices`
 /// than you'll use for actual signing, and the signature will still be valid.
-/// However, using the parameters appropriately will reduce the risk of
-/// your code accidentally reusing a nonce and exposing your secret key.
+/// However, using the parameters appropriately will reduce the risk of your
+/// code accidentally reusing a nonce and exposing your secret key.
+///
+/// For standalone nonce builders, a secret key in `SecNonceSpices` will also
+/// derive the public key bound into the `SecNonce` if no public key was
+/// explicitly provided.
 ///
 /// This type is meant to be used as a parameter of the state-machine API available
 /// via [`FirstRound`][crate::FirstRound] and [`SecondRound`][crate::SecondRound].
@@ -140,13 +145,10 @@ impl<'ns> SecNonceSpices<'ns> {
 /// session-specific data, such as the message being signed, or the
 /// public/secret key which will be used for signing.
 ///
-/// At bare minimum, [`SecNonceBuilder::new`] requires only 32 random
-/// input bytes. Chainable methods can be used thereafter to salt the resulting
-/// nonce with additional data. The nonce can be finalized and returned by
-/// [`SecNonceBuilder::build`].
-///
-///  If no other data is available, we highly recommend _at least_ salting the nonce
-/// with the public key, as recommended by BIP327.
+/// At bare minimum, [`SecNonceBuilder::new`] requires 32 random input bytes
+/// and the public key which will be used for signing. Chainable methods can be
+/// used thereafter to salt the resulting nonce with additional data. The nonce
+/// can be finalized and returned by [`SecNonceBuilder::build`].
 ///
 /// # Example
 ///
@@ -171,7 +173,8 @@ impl<'ns> SecNonceSpices<'ns> {
 /// assert_eq!(
 ///     secnonce,
 ///     "304e472f8028efc386eb305b496e49a9c71984fbddb915c04002764a98d77a82\
-///      b2f29921753a6a05a1f91556debdaac4d20ad20519f91bcebf4a2d842a05b0bc"
+///      b2f29921753a6a05a1f91556debdaac4d20ad20519f91bcebf4a2d842a05b0bc\
+///      037eaef9ce945fbcef58c6ca818f433fad8275c09441b06a274a93aa5d69374f62"
 ///         .parse()
 ///         .unwrap()
 /// );
@@ -180,6 +183,7 @@ pub struct SecNonceBuilder<'snb> {
     nonce_seed_bytes: [u8; 32],
     seckey: Option<Scalar>,
     pubkey: Option<Point>,
+    pubkey_is_explicit: bool,
     aggregated_pubkey: Option<Point>,
     message: Option<&'snb [u8]>,
     extra_inputs: Vec<&'snb dyn AsRef<[u8]>>,
@@ -194,10 +198,14 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// ```
     /// use rand::RngCore as _;
+    /// use secp::Point;
+    ///
+    /// let pubkey = Point::generator();
     ///
     /// # #[cfg(feature = "rand")]
     /// // Sample the seed automatically
     /// let secnonce = musig2::SecNonceBuilder::new(&mut rand::rng())
+    ///     .with_pubkey(pubkey)
     ///     .with_message(b"hello world!")
     ///     .build();
     ///
@@ -205,6 +213,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// let mut nonce_seed = [0u8; 32];
     /// rand::rng().fill_bytes(&mut nonce_seed);
     /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed)
+    ///     .with_pubkey(pubkey)
     ///     .with_message(b"hello world!")
     ///     .build();
     /// ```
@@ -223,6 +232,7 @@ impl<'snb> SecNonceBuilder<'snb> {
             nonce_seed_bytes,
             seckey: None,
             pubkey: None,
+            pubkey_is_explicit: false,
             aggregated_pubkey: None,
             message: None,
             extra_inputs: Vec::new(),
@@ -237,6 +247,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     pub fn with_pubkey(self, pubkey: impl Into<Point>) -> SecNonceBuilder<'snb> {
         SecNonceBuilder {
             pubkey: Some(pubkey.into()),
+            pubkey_is_explicit: true,
             ..self
         }
     }
@@ -252,6 +263,7 @@ impl<'snb> SecNonceBuilder<'snb> {
         SecNonceBuilder {
             seckey: Some(seckey),
             pubkey: Some(seckey * G),
+            pubkey_is_explicit: false,
             ..self
         }
     }
@@ -288,9 +300,11 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// ```
     /// # let nonce_seed = [0xABu8; 32];
+    /// # let pubkey = secp::Point::generator();
     /// let remote_ip = [127u8, 0, 0, 1];
     ///
     /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed)
+    ///     .with_pubkey(pubkey)
     ///     .with_extra_input(b"MyApp")
     ///     .with_extra_input(&remote_ip)
     ///     .with_extra_input(&String::from("What's up buttercup?"))
@@ -307,10 +321,19 @@ impl<'snb> SecNonceBuilder<'snb> {
 
     /// Sprinkles in a set of [`SecNonceSpices`] to this nonce builder. Extra inputs in
     /// `spices` are appended to the builder (see [`SecNonceBuilder::with_extra_input`]).
-    /// All other parameters will be merged with those in `spices`, preferring parameters
-    /// in `spices` if they are present.
+    /// The secret key and message will be merged with those in `spices`, preferring
+    /// parameters in `spices` if they are present. If a secret key is present in
+    /// `spices`, it will also derive the signing public key unless this builder
+    /// already has an explicitly provided public key.
     pub fn with_spices(mut self, spices: SecNonceSpices<'snb>) -> SecNonceBuilder<'snb> {
-        self.seckey = spices.seckey.or(self.seckey);
+        if let Some(seckey) = spices.seckey {
+            self.seckey = Some(seckey);
+            if self.pubkey.is_none() || !self.pubkey_is_explicit {
+                self.pubkey = Some(seckey * G);
+                self.pubkey_is_explicit = false;
+            }
+        }
+
         self.message = spices.message.map(|msg| msg.as_ref()).or(self.message);
 
         let mut new_extra_inputs = spices.extra_inputs;
@@ -322,7 +345,8 @@ impl<'snb> SecNonceBuilder<'snb> {
 
     /// Build the secret nonce by hashing all of the builder's inputs into two
     /// byte arrays, and reducing those byte arrays modulo the curve order into
-    /// two scalars `k1` and `k2`. These form the `SecNonce` as the tuple `(k1, k2)`.
+    /// two scalars `k1` and `k2`. These scalars and the signing public key form
+    /// the `SecNonce`.
     ///
     /// If the reduction results in an output of zero for either scalar,
     /// we use a nonce of 1 instead for that scalar.
@@ -330,7 +354,17 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// This method matches the standard nonce generation algorithm specified in
     /// [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki),
     /// except in the extremely unlikely case of a hash reducing to zero.
+    /// This crate keeps the BIP327 97-byte local `secnonce` form, embedding
+    /// the signing public key alongside the two secret nonce scalars so signing
+    /// can reject use with a different key.
+    ///
+    /// Panics if neither [`SecNonceBuilder::with_pubkey`] nor
+    /// [`SecNonceBuilder::with_seckey`] has been called.
     pub fn build(self) -> SecNonce {
+        let pubkey = self
+            .pubkey
+            .expect("BIP327 nonce generation requires a public key");
+
         let seckey_bytes = match self.seckey {
             Some(seckey) => seckey.serialize(),
             None => [0u8; 32],
@@ -346,17 +380,8 @@ impl<'snb> SecNonceBuilder<'snb> {
             .clone()
             .chain_update(xor_bytes(&seckey_bytes, &nonce_seed_hash));
 
-        // BIP327 doesn't allow the public key to be an optional argument,
-        // but there is no hard reason for that other than 'the RNG might fail'.
-        // For ergonomics we allow the pubkey to be omitted here in the same
-        // fashion as the aggregated pubkey.
-        match self.pubkey {
-            None => hasher.update([0]),
-            Some(pubkey) => {
-                hasher.update([33]); // individual pubkey len
-                hasher.update(pubkey.serialize());
-            }
-        }
+        hasher.update([33]); // individual pubkey len
+        hasher.update(pubkey.serialize());
 
         match self.aggregated_pubkey {
             None => hasher.update([0]),
@@ -401,7 +426,7 @@ impl<'snb> SecNonceBuilder<'snb> {
             MaybeScalar::Zero => Scalar::one(),
             MaybeScalar::Valid(k) => k,
         };
-        SecNonce { k1, k2 }
+        SecNonce { k1, k2, pubkey }
     }
 }
 
@@ -424,14 +449,17 @@ impl<'snb> SecNonceBuilder<'snb> {
 pub struct SecNonce {
     pub(crate) k1: Scalar,
     pub(crate) k2: Scalar,
+    pub(crate) pubkey: Point,
 }
 
 impl SecNonce {
-    /// Construct a new `SecNonce` from the given individual nonce values.
-    pub fn new<T: Into<Scalar>>(k1: T, k2: T) -> SecNonce {
+    /// Construct a new `SecNonce` from the given individual nonce values and
+    /// the public key it is bound to.
+    pub fn new<T: Into<Scalar>>(k1: T, k2: T, pubkey: impl Into<Point>) -> SecNonce {
         SecNonce {
             k1: k1.into(),
             k2: k2.into(),
+            pubkey: pubkey.into(),
         }
     }
 
@@ -483,14 +511,19 @@ impl SecNonce {
     ///
     /// [`SecNonce::generate`] is more secure because it combines multiple sources of
     /// entropy to compute the final nonce.
+    ///
+    /// The `pubkey` argument is bound into the returned `SecNonce`. Signing with
+    /// a secret key that does not correspond to this public key will fail with
+    /// [`SigningError::SecNoncePubkeyMismatch`][crate::SigningError::SecNoncePubkeyMismatch].
     #[cfg(any(test, feature = "rand"))]
-    pub fn random<R>(rng: &mut R) -> SecNonce
+    pub fn random<R>(rng: &mut R, pubkey: impl Into<Point>) -> SecNonce
     where
         R: rand::RngCore + rand::CryptoRng,
     {
         SecNonce {
             k1: Scalar::random(rng),
             k2: Scalar::random(rng),
+            pubkey: pubkey.into(),
         }
     }
 
@@ -650,30 +683,27 @@ mod encodings {
         type Serialized = [u8; SEC_NONCE_SIZE];
 
         /// Returns the binary serialization of `SecNonce`, which serializes
-        /// both inner scalar values into a fixed-length 64-byte array.
-        ///
-        /// Note that this serialization differs from the format suggested
-        /// in BIP327, in that we do not include a public key.
+        /// both inner scalar values and the signing public key into a
+        /// fixed-length 97-byte array.
         fn to_bytes(&self) -> Self::Serialized {
             let mut serialized = [0u8; SEC_NONCE_SIZE];
             serialized[..32].clone_from_slice(&self.k1.serialize());
-            serialized[32..].clone_from_slice(&self.k2.serialize());
+            serialized[32..64].clone_from_slice(&self.k2.serialize());
+            serialized[64..].clone_from_slice(&self.pubkey.serialize());
             serialized
         }
 
         /// Parses a `SecNonce` from a serialized byte slice.
-        /// This byte slice should be 64 bytes long, and encode two
-        /// non-zero 256-bit scalars.
-        ///
-        /// We also accept 97-byte long slices, to be compatible with BIP327's
-        /// suggested serialization format of `SecNonce`.
+        /// This byte slice should be 97 bytes long, and encode two
+        /// non-zero 256-bit scalars followed by a compressed public key.
         fn from_bytes(bytes: &[u8]) -> Result<Self, DecodeError<Self>> {
-            if bytes.len() != 64 && bytes.len() != 97 {
+            if bytes.len() != SEC_NONCE_SIZE {
                 return Err(DecodeError::bad_length(bytes.len()));
             }
-            let k1 = Scalar::from_slice(&bytes[..SEC_NONCE_SIZE / 2])?;
-            let k2 = Scalar::from_slice(&bytes[SEC_NONCE_SIZE / 2..SEC_NONCE_SIZE])?;
-            Ok(SecNonce { k1, k2 })
+            let k1 = Scalar::from_slice(&bytes[..32])?;
+            let k2 = Scalar::from_slice(&bytes[32..64])?;
+            let pubkey = Point::from_slice(&bytes[64..])?;
+            Ok(SecNonce { k1, k2, pubkey })
         }
     }
 
@@ -725,7 +755,7 @@ mod encodings {
         }
     }
 
-    impl_encoding_traits!(SecNonce, SEC_NONCE_SIZE, 97);
+    impl_encoding_traits!(SecNonce, SEC_NONCE_SIZE);
     impl_encoding_traits!(PubNonce, PUB_NONCE_SIZE);
     impl_encoding_traits!(AggNonce, PUB_NONCE_SIZE);
 
@@ -833,6 +863,33 @@ mod tests {
     }
 
     #[test]
+    fn secnonce_spices_seckey_replaces_derived_pubkey() {
+        let first_seckey = Scalar::try_from([0x11; 32]).unwrap();
+        let second_seckey = Scalar::try_from([0x22; 32]).unwrap();
+
+        let secnonce = SecNonce::build([0xAA; 32])
+            .with_seckey(first_seckey)
+            .with_spices(SecNonceSpices::new().with_seckey(second_seckey))
+            .build();
+
+        assert_eq!(secnonce.pubkey, second_seckey.base_point_mul());
+    }
+
+    #[test]
+    fn secnonce_spices_seckey_preserves_explicit_pubkey() {
+        let explicit_seckey = Scalar::try_from([0x11; 32]).unwrap();
+        let spice_seckey = Scalar::try_from([0x22; 32]).unwrap();
+        let explicit_pubkey = explicit_seckey.base_point_mul();
+
+        let secnonce = SecNonce::build([0xAA; 32])
+            .with_pubkey(explicit_pubkey)
+            .with_spices(SecNonceSpices::new().with_seckey(spice_seckey))
+            .build();
+
+        assert_eq!(secnonce.pubkey, explicit_pubkey);
+    }
+
+    #[test]
     fn test_nonce_aggregation() {
         const NONCE_AGG_VECTORS: &[u8] = include_bytes!("test_vectors/nonce_agg_vectors.json");
 
@@ -916,10 +973,18 @@ mod tests {
 
         let message = b"you betta not sign this twice";
 
-        let alice_secnonce = SecNonceBuilder::new([0xAA; 32]).build();
-        let bob_secnonce_1 = SecNonceBuilder::new([0xB1; 32]).build();
-        let bob_secnonce_2 = SecNonceBuilder::new([0xB2; 32]).build();
-        let bob_secnonce_3 = SecNonceBuilder::new([0xB3; 32]).build();
+        let alice_secnonce = SecNonceBuilder::new([0xAA; 32])
+            .with_pubkey(alice_pubkey)
+            .build();
+        let bob_secnonce_1 = SecNonceBuilder::new([0xB1; 32])
+            .with_pubkey(bob_pubkey)
+            .build();
+        let bob_secnonce_2 = SecNonceBuilder::new([0xB2; 32])
+            .with_pubkey(bob_pubkey)
+            .build();
+        let bob_secnonce_3 = SecNonceBuilder::new([0xB3; 32])
+            .with_pubkey(bob_pubkey)
+            .build();
 
         // First signature
         let aggnonce_1 =
@@ -966,28 +1031,48 @@ mod tests {
         let b2: MaybeScalar = aggnonce_2.nonce_coefficient(aggregated_pubkey, message);
         let b3: MaybeScalar = aggnonce_3.nonce_coefficient(aggregated_pubkey, message);
 
+        let final_nonce_1: Point = aggnonce_1.final_nonce(b1);
+        let final_nonce_2: Point = aggnonce_2.final_nonce(b2);
+        let final_nonce_3: Point = aggnonce_3.final_nonce(b3);
+
         let e1: MaybeScalar = crate::compute_challenge_hash_tweak(
-            &aggnonce_1.final_nonce::<Point>(b1).serialize_xonly(),
+            &final_nonce_1.serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             message,
         );
         let e2: MaybeScalar = crate::compute_challenge_hash_tweak(
-            &aggnonce_2.final_nonce::<Point>(b2).serialize_xonly(),
+            &final_nonce_2.serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             message,
         );
         let e3: MaybeScalar = crate::compute_challenge_hash_tweak(
-            &aggnonce_3.final_nonce::<Point>(b3).serialize_xonly(),
+            &final_nonce_3.serialize_xonly(),
             &key_agg_ctx.aggregated_pubkey(),
             message,
         );
 
-        let b2_diff = (b2 - b1).unwrap();
-        let b3_diff = (b3 - b1).unwrap();
+        let one = MaybeScalar::Valid(Scalar::one());
+        let r1 = one.negate_if(final_nonce_1.parity());
+        let r2 = one.negate_if(final_nonce_2.parity());
+        let r3 = one.negate_if(final_nonce_3.parity());
 
-        let top = (s3 - s1) * b2_diff - (s2 - s1) * b3_diff;
-        let bottom = a * ((e3 - e1) * b2_diff + (e1 - e2) * b3_diff);
-        let extracted_key = (top / bottom.unwrap()).unwrap();
+        let v1 = r1 * b1;
+        let v2 = r2 * b2;
+        let v3 = r3 * b3;
+
+        let w1 = e1 * a;
+        let w2 = e2 * a;
+        let w3 = e3 * a;
+
+        // The reused-nonce equations include BIP340 parity flips, so solve the
+        // three-signature linear system for Alice's effective signing key.
+        let det = r1 * (v2 * w3 - w2 * v3) - v1 * (r2 * w3 - w2 * r3) + w1 * (r2 * v3 - v2 * r3);
+        let det_key =
+            r1 * (v2 * s3 - s2 * v3) - v1 * (r2 * s3 - s2 * r3) + s1 * (r2 * v3 - v2 * r3);
+
+        let extracted_d = (det_key / det.unwrap()).unwrap();
+        let extracted_key =
+            extracted_d.negate_if(aggregated_pubkey.parity() ^ key_agg_ctx.parity_acc);
 
         assert_eq!(extracted_key, alice_seckey);
     }

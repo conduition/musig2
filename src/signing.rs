@@ -64,6 +64,10 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
         .key_coefficient(pubkey)
         .ok_or(SigningError::UnknownKey)?;
 
+    if secnonce.pubkey != pubkey {
+        return Err(SigningError::SecNoncePubkeyMismatch);
+    }
+
     let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
 
@@ -227,6 +231,65 @@ mod tests {
     use super::*;
     use crate::errors::DecodeError;
     use crate::testhex;
+
+    #[test]
+    fn sign_partial_rejects_secnonce_bound_to_different_pubkey() {
+        let seckey = Scalar::try_from([0x11; 32]).unwrap();
+        let other_seckey = Scalar::try_from([0x22; 32]).unwrap();
+
+        let pubkey = seckey.base_point_mul();
+        let other_pubkey = other_seckey.base_point_mul();
+        let key_agg_ctx = KeyAggContext::new([pubkey]).unwrap();
+        let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
+        let message = b"key-bound nonce regression";
+
+        let secnonce = SecNonce::generate([0xAA; 32], seckey, aggregated_pubkey, message, b"");
+        let mut secnonce_bytes: Vec<u8> = secnonce.into();
+        secnonce_bytes.truncate(64);
+        secnonce_bytes.extend_from_slice(&other_pubkey.serialize());
+
+        let mismatched_secnonce = SecNonce::from_bytes(&secnonce_bytes).unwrap();
+        let aggregated_nonce = AggNonce::sum([mismatched_secnonce.public_nonce()]);
+
+        let err = sign_partial::<PartialSignature>(
+            &key_agg_ctx,
+            seckey,
+            mismatched_secnonce,
+            &aggregated_nonce,
+            message,
+        )
+        .expect_err("sign_partial accepted a secnonce bound to another public key");
+
+        assert_eq!(err, SigningError::SecNoncePubkeyMismatch);
+    }
+
+    #[test]
+    fn sign_partial_reports_unknown_key_before_secnonce_mismatch() {
+        fn small_scalar(value: u8) -> Scalar {
+            let mut bytes = [0u8; 32];
+            bytes[31] = value;
+            Scalar::try_from(bytes).unwrap()
+        }
+
+        let member_seckey = small_scalar(1);
+        let signing_seckey = small_scalar(2);
+        let nonce_pubkey = small_scalar(3).base_point_mul();
+
+        let key_agg_ctx = KeyAggContext::new([member_seckey.base_point_mul()]).unwrap();
+        let secnonce = SecNonce::new(small_scalar(4), small_scalar(5), nonce_pubkey);
+        let aggregated_nonce = AggNonce::sum([secnonce.public_nonce()]);
+
+        let err = sign_partial::<PartialSignature>(
+            &key_agg_ctx,
+            signing_seckey,
+            secnonce,
+            &aggregated_nonce,
+            b"unknown key takes precedence",
+        )
+        .expect_err("sign_partial accepted a signer outside the key aggregation context");
+
+        assert_eq!(err, SigningError::UnknownKey);
+    }
 
     #[test]
     fn test_partial_sign_and_verify() {

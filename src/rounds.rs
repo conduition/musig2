@@ -593,7 +593,9 @@ mod tests {
 
         // Invalid partial signatures should be automatically rejected.
         {
-            let wrong_nonce = SecNonce::build([0xCC; 32]).build();
+            let wrong_nonce = SecNonce::build([0xCC; 32])
+                .with_pubkey(seckeys[0].base_point_mul())
+                .build();
             let invalid_partial_signature: PartialSignature = sign_partial(
                 &key_agg_ctx,
                 seckeys[0],

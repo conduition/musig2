@@ -93,6 +93,14 @@ pub enum SigningError {
     /// finalizing the [`FirstRound`][crate::FirstRound].
     UnknownKey,
 
+    /// The public key bound into the secret nonce does not match the secret
+    /// key being used for signing.
+    ///
+    /// This is a local consistency check for callers carrying a `SecNonce`
+    /// from nonce generation to signing. It does not authenticate raw
+    /// `SecNonce` bytes supplied by another party.
+    SecNoncePubkeyMismatch,
+
     /// We could not verify the signature we produced.
     /// This may indicate a malicious actor attempted to make us
     /// produce a signature which could reveal our secret key. The
@@ -106,6 +114,8 @@ impl fmt::Display for SigningError {
             "failed to create signature: {}",
             match self {
                 Self::UnknownKey => "signing key is not a member of the group",
+                Self::SecNoncePubkeyMismatch =>
+                    "secret nonce public key does not match signing key",
                 Self::SelfVerifyFail => "failed to verify our own signature; something is wrong",
             }
         )
