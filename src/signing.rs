@@ -308,6 +308,7 @@ mod tests {
         #[derive(serde::Deserialize, Clone)]
         struct SignError {
             signer: Option<usize>,
+            contrib: Option<String>,
         }
 
         #[derive(serde::Deserialize, Clone)]
@@ -328,6 +329,16 @@ mod tests {
             nonce_indices: Vec<usize>,
             msg_index: usize,
             signer_index: usize,
+            comment: String,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct VerifyErrorTestCase {
+            #[serde(rename = "sig", deserialize_with = "testhex::deserialize")]
+            partial_signature: Vec<u8>,
+            key_indices: Vec<usize>,
+            nonce_indices: Vec<usize>,
+            error: SignError,
             comment: String,
         }
 
@@ -354,6 +365,7 @@ mod tests {
             valid_test_cases: Vec<ValidSignVerifyTestCase>,
             sign_error_test_cases: Vec<SignErrorTestCase>,
             verify_fail_test_cases: Vec<VerifyFailTestCase>,
+            verify_error_test_cases: Vec<VerifyErrorTestCase>,
         }
 
         let vectors: SignVerifyVectors = serde_json::from_slice(SIGN_VERIFY_VECTORS)
@@ -584,6 +596,65 @@ mod tests {
                 Err(secp::errors::InvalidScalarBytes),
                 "unexpected valid partial signature"
             );
+        }
+
+        for test_case in vectors.verify_error_test_cases.iter() {
+            PartialSignature::try_from(test_case.partial_signature.as_slice())
+                .expect("verify error test should use a valid partial signature scalar");
+
+            let invalid_signer = test_case
+                .error
+                .signer
+                .expect("verify error test should identify a signer");
+
+            match test_case.error.contrib.as_deref() {
+                Some("pubnonce") => {
+                    for (signer_index, &nonce_index) in test_case.nonce_indices.iter().enumerate() {
+                        let result = PubNonce::from_bytes(&vectors.public_nonces[nonce_index]);
+                        if signer_index == invalid_signer {
+                            assert_eq!(
+                                result,
+                                Err(DecodeError::from(secp::errors::InvalidPointBytes)),
+                                "{} - expected invalid pubnonce for signer {}",
+                                test_case.comment,
+                                signer_index,
+                            );
+                        } else {
+                            result.unwrap_or_else(|_| {
+                                panic!(
+                                    "{} - unexpected pubnonce parsing error for signer {}",
+                                    test_case.comment, signer_index
+                                )
+                            });
+                        }
+                    }
+                }
+                Some("pubkey") => {
+                    for (signer_index, &key_index) in test_case.key_indices.iter().enumerate() {
+                        let result = Point::try_from(&vectors.pubkeys[key_index]);
+                        if signer_index == invalid_signer {
+                            assert_eq!(
+                                result,
+                                Err(secp::errors::InvalidPointBytes),
+                                "{} - expected invalid pubkey for signer {}",
+                                test_case.comment,
+                                signer_index,
+                            );
+                        } else {
+                            result.unwrap_or_else(|_| {
+                                panic!(
+                                    "{} - unexpected pubkey parsing error for signer {}",
+                                    test_case.comment, signer_index
+                                )
+                            });
+                        }
+                    }
+                }
+                other => panic!(
+                    "{} - unsupported verify error contribution: {:?}",
+                    test_case.comment, other
+                ),
+            }
         }
     }
 

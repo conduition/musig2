@@ -813,20 +813,23 @@ mod tests {
 
         #[derive(serde::Deserialize)]
         struct NonceGenTestCase {
-            #[serde(rename = "rand", deserialize_with = "testhex::deserialize")]
+            #[serde(rename = "rand_", deserialize_with = "testhex::deserialize")]
             nonce_seed: [u8; 32],
 
             #[serde(rename = "sk")]
-            seckey: Scalar,
+            seckey: Option<Scalar>,
 
-            #[serde(rename = "aggpk", deserialize_with = "testhex::deserialize")]
-            aggregated_pubkey: [u8; 32],
+            #[serde(rename = "pk")]
+            pubkey: Point,
 
-            #[serde(rename = "msg", deserialize_with = "testhex::deserialize")]
-            message: Vec<u8>,
+            #[serde(rename = "aggpk", deserialize_with = "testhex::deserialize_option")]
+            aggregated_pubkey: Option<[u8; 32]>,
 
-            #[serde(rename = "extra_in", deserialize_with = "testhex::deserialize")]
-            extra_input: Vec<u8>,
+            #[serde(rename = "msg", deserialize_with = "testhex::deserialize_option")]
+            message: Option<Vec<u8>>,
+
+            #[serde(rename = "extra_in", deserialize_with = "testhex::deserialize_option")]
+            extra_input: Option<Vec<u8>>,
 
             expected_secnonce: SecNonce,
             expected_pubnonce: PubNonce,
@@ -841,20 +844,38 @@ mod tests {
             .expect("failed to parse test vectors from nonce_gen_vectors.json");
 
         for test_case in vectors.test_cases {
-            let aggregated_pubkey =
-                Point::lift_x(test_case.aggregated_pubkey).unwrap_or_else(|_| {
+            let mut secnonce_builder =
+                SecNonce::build(test_case.nonce_seed).with_pubkey(test_case.pubkey);
+
+            if let Some(seckey) = test_case.seckey {
+                assert_eq!(
+                    test_case.pubkey,
+                    seckey.base_point_mul(),
+                    "nonce generation vector has inconsistent sk and pk"
+                );
+                secnonce_builder =
+                    secnonce_builder.with_spices(SecNonceSpices::new().with_seckey(seckey));
+            }
+
+            if let Some(aggregated_pubkey) = test_case.aggregated_pubkey {
+                let aggregated_pubkey = Point::lift_x(aggregated_pubkey).unwrap_or_else(|_| {
                     panic!(
                         "invalid aggregated xonly pubkey in test vector: {}",
-                        base16ct::lower::encode_string(&test_case.aggregated_pubkey)
+                        base16ct::lower::encode_string(&aggregated_pubkey)
                     )
                 });
-            let secnonce = SecNonce::generate(
-                test_case.nonce_seed,
-                test_case.seckey,
-                aggregated_pubkey,
-                &test_case.message,
-                &test_case.extra_input,
-            );
+                secnonce_builder = secnonce_builder.with_aggregated_pubkey(aggregated_pubkey);
+            }
+
+            if let Some(ref message) = test_case.message {
+                secnonce_builder = secnonce_builder.with_message(message);
+            }
+
+            if let Some(ref extra_input) = test_case.extra_input {
+                secnonce_builder = secnonce_builder.with_extra_input(extra_input);
+            }
+
+            let secnonce = secnonce_builder.build();
 
             assert_eq!(secnonce, test_case.expected_secnonce);
             assert_eq!(secnonce.public_nonce(), test_case.expected_pubnonce);
