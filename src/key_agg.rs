@@ -162,7 +162,9 @@ impl KeyAggContext {
     /// pubkey. `is_xonly` should be true for applying Bitcoin taproot commitments,
     /// and false for applying BIP32 key derivation tweaks.
     ///
-    /// Returns an error if the tweaked public key would be the point at infinity.
+    /// The tweak must be an integer `t` in the BIP327 range `0 <= t < n`.
+    /// A zero tweak is valid. Returns an error if the tweak is out of range
+    /// or if the tweaked public key would be the point at infinity.
     ///
     /// ```
     #[cfg_attr(feature = "secp256k1", doc = "use secp256k1::{PublicKey, SecretKey};")]
@@ -197,7 +199,11 @@ impl KeyAggContext {
     ///     aggregated_pubkey.to_string(),
     ///     "0385eb6101982e142dba553cae437d08a82880fe9a22889c997f8e415a61b7a2d5"
     /// );
-    pub fn with_tweak(self, tweak: impl Into<Scalar>, is_xonly: bool) -> Result<Self, TweakError> {
+    pub fn with_tweak(
+        self,
+        tweak: impl Into<MaybeScalar>,
+        is_xonly: bool,
+    ) -> Result<Self, TweakError> {
         if is_xonly {
             self.with_xonly_tweak(tweak)
         } else {
@@ -209,7 +215,7 @@ impl KeyAggContext {
     pub fn with_tweaks<S, I>(mut self, tweaks: I) -> Result<Self, TweakError>
     where
         I: IntoIterator<Item = (S, bool)>,
-        S: Into<Scalar>,
+        S: Into<MaybeScalar>,
     {
         for (tweak, is_xonly) in tweaks.into_iter() {
             self = self.with_tweak(tweak, is_xonly)?;
@@ -218,8 +224,9 @@ impl KeyAggContext {
     }
 
     /// Same as `self.with_tweak(tweak, false)`. See [`KeyAggContext::with_tweak`].
-    pub fn with_plain_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError> {
-        let tweak: Scalar = tweak.into();
+    /// A zero tweak is valid and leaves the aggregate key unchanged.
+    pub fn with_plain_tweak(self, tweak: impl Into<MaybeScalar>) -> Result<Self, TweakError> {
+        let tweak = tweak.into();
 
         // Q' = Q + t*G
         let tweaked_pubkey = (self.pubkey + (tweak * G)).not_inf()?;
@@ -235,14 +242,15 @@ impl KeyAggContext {
     }
 
     /// Same as `self.with_tweak(tweak, true)`. See [`KeyAggContext::with_tweak`].
-    pub fn with_xonly_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError> {
+    /// A zero tweak is valid and can still normalize an odd aggregate key.
+    pub fn with_xonly_tweak(self, tweak: impl Into<MaybeScalar>) -> Result<Self, TweakError> {
         // if has_even_y(Q): g = 1  (Same as a plain tweak.)
         // else: g = n - 1
         if self.pubkey.has_even_y() {
             return self.with_plain_tweak(tweak);
         }
 
-        let tweak: Scalar = tweak.into();
+        let tweak = tweak.into();
 
         // Q' = g*Q + t*G
         //
@@ -273,7 +281,7 @@ impl KeyAggContext {
             .finalize()
             .into();
 
-        let tweak = Scalar::try_from(tweak_hash).map_err(|_| TweakError)?;
+        let tweak = MaybeScalar::try_from(tweak_hash).map_err(|_| TweakError)?;
         self.with_xonly_tweak(tweak)
     }
 
@@ -591,9 +599,10 @@ impl BinaryEncoding for KeyAggContext {
         let parity_acc = subtle::Choice::from(header_byte & 1);
         let mut cursor: usize = 1;
 
-        // Decode 32-byte tweak_acc if present
+        // Decode 32-byte tweak_acc if present.
         let tweak_acc = if header_byte & 0b10 != 0 {
-            // only non-zero tweak accumulators are accepted in deserialization
+            // A zero accumulator is encoded by omitting this field, so if the
+            // field is present it must be a non-zero scalar.
             let tweak_acc = Scalar::from_slice(&bytes[cursor..cursor + 32])?;
             cursor += 32;
             MaybeScalar::Valid(tweak_acc)
@@ -760,6 +769,147 @@ mod tests {
             "029a893e777979e0cb827cd3d0458b1a677ad68f3c69ad0120cf5fc9e3268401cb"
                 .parse::<Point>()
                 .unwrap()
+        );
+    }
+
+    #[cfg(feature = "secp256k1")]
+    fn small_scalar(value: u8) -> Scalar {
+        let mut bytes = [0u8; 32];
+        bytes[31] = value;
+        Scalar::try_from(bytes).unwrap()
+    }
+
+    #[cfg(feature = "secp256k1")]
+    fn two_key_context() -> KeyAggContext {
+        let seckeys = two_key_seckeys();
+        KeyAggContext::new(seckeys.map(|seckey| seckey.base_point_mul())).unwrap()
+    }
+
+    #[cfg(feature = "secp256k1")]
+    fn two_key_seckeys() -> [Scalar; 2] {
+        [small_scalar(1), small_scalar(2)]
+    }
+
+    #[cfg(feature = "secp256k1")]
+    fn odd_plain_tweaked_context() -> (KeyAggContext, KeyAggContext) {
+        let base = two_key_context();
+        let ctx = base
+            .clone()
+            .with_plain_tweak(small_scalar(3))
+            .expect("non-zero tweak should be valid");
+        assert!(ctx.pubkey.has_odd_y(), "test fixture must have odd Y");
+        (base, ctx)
+    }
+
+    #[cfg(feature = "secp256k1")]
+    fn odd_two_key_context() -> ([Scalar; 2], KeyAggContext) {
+        let seckeys = [small_scalar(1), small_scalar(3)];
+        let ctx = KeyAggContext::new(seckeys.map(|seckey| seckey.base_point_mul())).unwrap();
+        assert!(ctx.pubkey.has_odd_y(), "test fixture must have odd Y");
+        (seckeys, ctx)
+    }
+
+    #[cfg(feature = "secp256k1")]
+    #[test]
+    fn key_agg_accepts_zero_plain_tweak() {
+        let ctx = two_key_context();
+        let tweaked = ctx
+            .clone()
+            .with_plain_tweak(secp256k1::Scalar::ZERO)
+            .expect("zero tweak should be valid");
+
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.aggregated_pubkey::<Point>()
+        );
+        assert_eq!(bool::from(tweaked.parity_acc), bool::from(ctx.parity_acc));
+        assert_eq!(tweaked.tweak_sum::<Scalar>(), None);
+    }
+
+    #[cfg(feature = "secp256k1")]
+    #[test]
+    fn key_agg_accepts_zero_xonly_tweak_on_odd_key() {
+        let (base, ctx) = odd_plain_tweaked_context();
+
+        let pubkey_before = ctx.pubkey;
+        let parity_acc_before = ctx.parity_acc;
+        let tweak_acc_before = ctx.tweak_acc;
+
+        let tweaked = ctx
+            .clone()
+            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .expect("zero tweak should be valid");
+
+        assert_eq!(tweaked.pubkey, -pubkey_before);
+        assert_eq!(
+            tweaked.pubkey.serialize_xonly(),
+            pubkey_before.serialize_xonly()
+        );
+        assert_eq!(
+            bool::from(tweaked.parity_acc),
+            !bool::from(parity_acc_before)
+        );
+        assert_eq!(tweaked.tweak_acc, -tweak_acc_before);
+        assert_eq!(
+            tweaked.aggregated_pubkey_untweaked::<Point>(),
+            base.aggregated_pubkey::<Point>()
+        );
+    }
+
+    #[cfg(feature = "secp256k1")]
+    #[test]
+    fn key_agg_accepts_zero_xonly_tweak_with_existing_parity_acc() {
+        let (_base, ctx) = odd_plain_tweaked_context();
+        let normalized = ctx
+            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .expect("zero tweak should be valid");
+        assert!(normalized.pubkey.has_even_y());
+        assert!(bool::from(normalized.parity_acc));
+
+        let odd_again = normalized
+            .with_plain_tweak(small_scalar(2))
+            .expect("non-zero tweak should be valid");
+        assert!(odd_again.pubkey.has_odd_y(), "test fixture must have odd Y");
+        assert!(bool::from(odd_again.parity_acc));
+
+        let renormalized = odd_again
+            .clone()
+            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .expect("zero tweak should be valid");
+
+        assert_eq!(renormalized.pubkey, -odd_again.pubkey);
+        assert!(!bool::from(renormalized.parity_acc));
+        assert_eq!(renormalized.tweak_acc, -odd_again.tweak_acc);
+    }
+
+    #[cfg(feature = "secp256k1")]
+    #[test]
+    fn key_agg_serializes_zero_xonly_tweak_state() {
+        let (seckeys, ctx) = odd_two_key_context();
+        assert_eq!(ctx.tweak_acc, MaybeScalar::Zero);
+
+        let tweaked = ctx
+            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .expect("zero tweak should be valid");
+
+        assert!(tweaked.pubkey.has_even_y());
+        assert!(bool::from(tweaked.parity_acc));
+        assert_eq!(tweaked.tweak_acc, MaybeScalar::Zero);
+
+        let serialized = tweaked.to_bytes();
+        assert_eq!(serialized[0] & 0b11, 0b01);
+
+        let deserialized =
+            KeyAggContext::from_bytes(&serialized).expect("serialized context should round trip");
+        assert_eq!(deserialized, tweaked);
+        assert_eq!(deserialized.pubkey, tweaked.pubkey);
+
+        let group_seckey: Scalar = deserialized
+            .aggregated_seckey(seckeys)
+            .expect("aggregate secret key should match zero-tweaked context");
+        assert_eq!(
+            group_seckey.base_point_mul(),
+            deserialized.aggregated_pubkey::<Point>()
         );
     }
 
