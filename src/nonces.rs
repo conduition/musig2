@@ -172,8 +172,8 @@ impl<'ns> SecNonceSpices<'ns> {
 ///
 /// assert_eq!(
 ///     secnonce,
-///     "304e472f8028efc386eb305b496e49a9c71984fbddb915c04002764a98d77a82\
-///      b2f29921753a6a05a1f91556debdaac4d20ad20519f91bcebf4a2d842a05b0bc\
+///     "87b4e8c4f6b68878e17945421dae9d38528ced027fc4a14fcbdc539d7f7889b5\
+///      d33dabdf045c3a4c26df8f8d055d6efdfa3a8a50b481a5bbd5df8dbe5f36741f\
 ///      037eaef9ce945fbcef58c6ca818f433fad8275c09441b06a274a93aa5d69374f62"
 ///         .parse()
 ///         .unwrap()
@@ -365,20 +365,22 @@ impl<'snb> SecNonceBuilder<'snb> {
             .pubkey
             .expect("BIP327 nonce generation requires a public key");
 
-        let seckey_bytes = match self.seckey {
-            Some(seckey) => seckey.serialize(),
-            None => [0u8; 32],
-        };
+        let rand = match self.seckey {
+            Some(seckey) => {
+                let nonce_seed_hash: [u8; 32] = tagged_hashes::MUSIG_AUX_TAG_HASHER
+                    .clone()
+                    .chain_update(self.nonce_seed_bytes)
+                    .finalize()
+                    .into();
 
-        let nonce_seed_hash: [u8; 32] = tagged_hashes::MUSIG_AUX_TAG_HASHER
-            .clone()
-            .chain_update(self.nonce_seed_bytes)
-            .finalize()
-            .into();
+                xor_bytes(&seckey.serialize(), &nonce_seed_hash)
+            }
+            None => self.nonce_seed_bytes,
+        };
 
         let mut hasher = tagged_hashes::MUSIG_NONCE_TAG_HASHER
             .clone()
-            .chain_update(xor_bytes(&seckey_bytes, &nonce_seed_hash));
+            .chain_update(rand);
 
         hasher.update([33]); // individual pubkey len
         hasher.update(pubkey.serialize());
@@ -400,18 +402,15 @@ impl<'snb> SecNonceBuilder<'snb> {
             }
         };
 
-        // We still write the extra input length if the caller provided empty extra info.
-        if !self.extra_inputs.is_empty() {
-            let extra_input_total_len: usize = self
-                .extra_inputs
-                .iter()
-                .map(|extra_in| extra_in.as_ref().len())
-                .sum();
+        let extra_input_total_len: usize = self
+            .extra_inputs
+            .iter()
+            .map(|extra_in| extra_in.as_ref().len())
+            .sum();
+        hasher.update((extra_input_total_len as u32).to_be_bytes());
 
-            hasher.update((extra_input_total_len as u32).to_be_bytes());
-            for extra_input in self.extra_inputs {
-                hasher.update(extra_input.as_ref());
-            }
+        for extra_input in self.extra_inputs {
+            hasher.update(extra_input.as_ref());
         }
 
         // Cloning the hash engine state reduces the computations needed.
@@ -887,6 +886,28 @@ mod tests {
             .build();
 
         assert_eq!(secnonce.pubkey, explicit_pubkey);
+    }
+
+    #[test]
+    fn nonce_generation_matches_bip327_when_optional_inputs_are_absent() {
+        let pubkey = "02F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
+            .parse::<Point>()
+            .unwrap();
+
+        let secnonce = SecNonce::build([0x0F; 32]).with_pubkey(pubkey).build();
+
+        let expected_secnonce = "89BDD787D0284E5E4D5FC572E49E316BAB7E21E3B1830DE37DFE80156FA41A6D\
+                                 0B17AE8D024C53679699A6FD7944D9C4A366B514BAF43088E0708B1023DD2897\
+                                 02F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
+            .parse::<SecNonce>()
+            .unwrap();
+        let expected_pubnonce = "02C96E7CB1E8AA5DAC64D872947914198F607D90ECDE5200DE52978AD5DED63C00\
+                                 0299EC5117C2D29EDEE8A2092587C3909BE694D5CFF0667D6C02EA4059F7CD9786"
+            .parse::<PubNonce>()
+            .unwrap();
+
+        assert_eq!(secnonce, expected_secnonce);
+        assert_eq!(secnonce.public_nonce(), expected_pubnonce);
     }
 
     #[test]
