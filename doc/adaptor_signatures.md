@@ -37,9 +37,9 @@ let adaptor_point = adaptor_secret.base_point_mul();
     use musig2::{AggNonce, SecNonce};
 
     let secnonces = [
-        SecNonce::build([0x11; 32]).with_pubkey(pubkeys[0]).build(),
-        SecNonce::build([0x22; 32]).with_pubkey(pubkeys[1]).build(),
-        SecNonce::build([0x33; 32]).with_pubkey(pubkeys[2]).build(),
+        SecNonce::build([0x11; 32], pubkeys[0]).build(),
+        SecNonce::build([0x22; 32], pubkeys[1]).build(),
+        SecNonce::build([0x33; 32], pubkeys[2]).build(),
     ];
 
     let pubnonces = [

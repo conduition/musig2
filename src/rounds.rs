@@ -106,8 +106,7 @@ impl FirstRound {
             .ok_or_else(|| SignerIndexError::new(signer_index, key_agg_ctx.pubkeys().len()))?;
         let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
 
-        let secnonce = SecNonce::build(nonce_seed)
-            .with_pubkey(signer_pubkey)
+        let secnonce = SecNonce::build(nonce_seed, signer_pubkey)
             .with_aggregated_pubkey(aggregated_pubkey)
             .with_extra_input(&(signer_index as u32).to_be_bytes())
             .with_spices(spices)
@@ -593,9 +592,7 @@ mod tests {
 
         // Invalid partial signatures should be automatically rejected.
         {
-            let wrong_nonce = SecNonce::build([0xCC; 32])
-                .with_pubkey(seckeys[0].base_point_mul())
-                .build();
+            let wrong_nonce = SecNonce::build([0xCC; 32], seckeys[0].base_point_mul()).build();
             let invalid_partial_signature: PartialSignature = sign_partial(
                 &key_agg_ctx,
                 seckeys[0],
