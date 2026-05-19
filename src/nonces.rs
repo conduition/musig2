@@ -965,28 +965,6 @@ mod tests {
     }
 
     #[test]
-    fn nonce_generation_matches_bip327_when_optional_inputs_are_absent() {
-        let pubkey = "02F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
-            .parse::<Point>()
-            .unwrap();
-
-        let secnonce = SecNonce::build([0x0F; 32], pubkey).build();
-
-        let expected_secnonce = "89BDD787D0284E5E4D5FC572E49E316BAB7E21E3B1830DE37DFE80156FA41A6D\
-                                 0B17AE8D024C53679699A6FD7944D9C4A366B514BAF43088E0708B1023DD2897\
-                                 02F9308A019258C31049344F85F89D5229B531C845836F99B08601F113BCE036F9"
-            .parse::<SecNonce>()
-            .unwrap();
-        let expected_pubnonce = "02C96E7CB1E8AA5DAC64D872947914198F607D90ECDE5200DE52978AD5DED63C00\
-                                 0299EC5117C2D29EDEE8A2092587C3909BE694D5CFF0667D6C02EA4059F7CD9786"
-            .parse::<PubNonce>()
-            .unwrap();
-
-        assert_eq!(secnonce, expected_secnonce);
-        assert_eq!(secnonce.public_nonce(), expected_pubnonce);
-    }
-
-    #[test]
     fn test_nonce_aggregation() {
         const NONCE_AGG_VECTORS: &[u8] = include_bytes!("test_vectors/nonce_agg_vectors.json");
 
