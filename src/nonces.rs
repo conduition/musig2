@@ -431,10 +431,9 @@ impl<'snb> SecNonceBuilder<'snb> {
 
         let mut hasher = tagged_hashes::MUSIG_NONCE_TAG_HASHER
             .clone()
-            .chain_update(rand);
-
-        hasher.update([33]); // individual pubkey len
-        hasher.update(self.pubkey.serialize());
+            .chain_update(rand)
+            .chain_update([33]) // individual pubkey len
+            .chain_update(self.pubkey.serialize());
 
         match self.aggregated_pubkey {
             None => hasher.update([0]),
