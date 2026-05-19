@@ -570,7 +570,7 @@ impl SecNonce {
     ///
     /// The `pubkey` argument is bound into the returned `SecNonce`. Signing with
     /// a secret key that does not correspond to this public key will fail with
-    /// [`SigningError::SecNoncePubkeyMismatch`][crate::SigningError::SecNoncePubkeyMismatch].
+    /// [`SigningError::SecNoncePubkeyMismatch`][crate::errors::SigningError::SecNoncePubkeyMismatch].
     #[cfg(any(test, feature = "rand"))]
     pub fn random<R>(rng: &mut R, pubkey: impl Into<Point>) -> SecNonce
     where
