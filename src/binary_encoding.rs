@@ -21,7 +21,7 @@ pub trait BinaryEncoding: Sized {
 /// and then invoking `impl_encoding_traits` on the type.
 macro_rules! impl_encoding_traits {
     // Fixed length encoding
-    ($typename:ty, $byte_len:expr $(, $max_byte_len:expr)?) => {
+    ($typename:ty, $byte_len:expr) => {
         /// assert that $typename implements `BinaryEncoding`
         const _: () = {
             fn __(
@@ -94,20 +94,6 @@ macro_rules! impl_encoding_traits {
             }
         }
 
-        $(
-            impl TryFrom<&[u8; $max_byte_len]> for $typename {
-                type Error = DecodeError<Self>;
-
-                /// Parse this type from its maximum-length binary representation.
-                /// Throws away unused data.
-                ///
-                /// Same as [`Self::from_bytes`][Self::from_bytes].
-                fn try_from(bytes: &[u8; $max_byte_len]) -> Result<Self, Self::Error> {
-                    Self::from_bytes(bytes)
-                }
-            }
-        )?
-
         impl From<$typename> for [u8; $byte_len] {
             /// Serialize this type to a fixed-length byte array.
             fn from(value: $typename) -> Self {
@@ -158,10 +144,6 @@ macro_rules! impl_encoding_traits {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 #[allow(unused_mut, unused_variables)]
                 let mut buffer = [0u8; $byte_len];
-
-                // Used for a type like SecNonce where we need to accept a longer encoding
-                // and throw away the unused bytes.
-                $(let mut buffer = [0u8; $max_byte_len];)?
 
                 let bytes = serdect::slice::deserialize_hex_or_bin(&mut buffer, deserializer)?;
                 <$typename>::from_bytes(bytes).map_err(|_| {
