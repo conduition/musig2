@@ -96,7 +96,7 @@ impl FirstRound {
     ///
     /// Returns [`RoundSetupError::InvalidSignerIndex`] if the given `signer_index` is
     /// out of range, or [`RoundSetupError::MismatchingSecretKey`] if a secret key given
-    /// in `spices` does not match the public key for the signer index passed to [`FirstRound::new`],
+    /// in `spices` does not match the public key for the signer index passed to [`FirstRound::new`].
     pub fn new(
         key_agg_ctx: KeyAggContext,
         nonce_seed: impl Into<NonceSeed>,
