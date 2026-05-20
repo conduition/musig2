@@ -65,17 +65,12 @@ fn extra_input_length_check<T: AsRef<[u8]>>(extra_inputs: &[T]) {
 
 /// A set of optional parameters which can be provided to _spice up_ the
 /// entropy of the secret nonces generated for a signing session.
-///
 /// These parameters are usually not functionally required for any operations
-/// after nonce generation. When the nonce builder already has the signer's
-/// public key, you can provide a different secret key in the `SecNonceSpices`
-/// than you'll use for actual signing, and the signature will still be valid.
-/// However, using the parameters appropriately will reduce the risk of your
-/// code accidentally reusing a nonce and exposing your secret key.
+/// after nonce generation.
 ///
-/// For standalone nonce builders, a secret key in `SecNonceSpices` will also
-/// derive the public key bound into the `SecNonce` if no public key was
-/// explicitly provided.
+/// Beware that if you provide a secret key in the `SecNonceSpices`, it will
+/// override any public or secret key given explicitly in the constructor of
+/// [`SecNonceBuilder`].
 ///
 /// This type is meant to be used as a parameter of the state-machine API available
 /// via [`FirstRound`][crate::FirstRound] and [`SecondRound`][crate::SecondRound].
