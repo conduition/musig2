@@ -133,84 +133,6 @@ impl<'ns> SecNonceSpices<'ns> {
     }
 }
 
-/// A helper trait to represent either a secret or public key.
-/// Implemented for [`secp::Point`] and [`secp::Scalar`].
-///
-/// If the `secp256k1` feature is enabled, this trait is implemented
-/// for [`secp256k1::SecretKey`], [`secp256k1::Scalar`], [`secp256k1::PublicKey`], and
-/// `(secp256k1::XOnlyPublicKey, secp256k1::Parity)`.
-///
-/// If the `k256` feature is enabled, this trait is implemented for [`k256::SecretKey`],
-/// [`k256::NonZeroScalar`], and [`k256::PublicKey`] as well.
-pub trait SeckeyOrPubkey {
-    /// Return the public key. If this is a secret key, this invokes [`Scalar::base_point_mul`].
-    fn pubkey(&self) -> Point;
-    /// Return the secret key if available.
-    fn seckey(self) -> Option<Scalar>;
-}
-
-impl SeckeyOrPubkey for Scalar {
-    fn pubkey(&self) -> Point {
-        self.base_point_mul()
-    }
-    fn seckey(self) -> Option<Scalar> {
-        Some(self)
-    }
-}
-
-impl SeckeyOrPubkey for Point {
-    fn pubkey(&self) -> Point {
-        *self
-    }
-    fn seckey(self) -> Option<Scalar> {
-        None
-    }
-}
-
-macro_rules! impl_seckey {
-    ($type_name:path) => {
-        impl SeckeyOrPubkey for $type_name {
-            fn pubkey(&self) -> Point {
-                Scalar::from(self.clone()).base_point_mul()
-            }
-            fn seckey(self) -> Option<Scalar> {
-                Some(Scalar::from(self))
-            }
-        }
-    };
-}
-
-macro_rules! impl_pubkey {
-    ($type_name:path) => {
-        impl SeckeyOrPubkey for $type_name {
-            fn pubkey(&self) -> Point {
-                Point::from(*self)
-            }
-            fn seckey(self) -> Option<Scalar> {
-                None
-            }
-        }
-    };
-}
-
-#[cfg(feature = "secp256k1")]
-mod _secp256k1 {
-    use super::*;
-    impl_seckey!(secp256k1::SecretKey);
-    impl_seckey!(secp256k1::Scalar);
-    impl_pubkey!(secp256k1::PublicKey);
-    type KeyAndParity = (secp256k1::XOnlyPublicKey, secp256k1::Parity);
-    impl_pubkey!(KeyAndParity);
-}
-
-#[cfg(feature = "k256")]
-mod _k256 {
-    use super::*;
-    impl_seckey!(k256::SecretKey);
-    impl_seckey!(k256::NonZeroScalar);
-    impl_pubkey!(k256::PublicKey);
-}
-
 /// A helper struct used to construct [`SecNonce`] instances.
 ///
 /// `SecNonceBuilder` allows piecemeal salting of the resulting `SecNonce`
@@ -223,8 +145,8 @@ mod _k256 {
 /// session-specific data, such as the message being signed, or the
 /// public/secret key which will be used for signing.
 ///
-/// At bare minimum, [`SecNonceBuilder::new`] requires 32 random input bytes
-/// and the public or secret key which will be used for signing. Chainable methods
+/// At bare minimum, [`SecNonceBuilder::from_pubkey`] requires 32 random input bytes
+/// and the public key which will be used for signing. Chainable methods
 /// can be used thereafter to salt the resulting nonce with additional data. The
 /// nonce can be finalized and returned by [`SecNonceBuilder::build`].
 ///
@@ -242,7 +164,7 @@ mod _k256 {
 /// let pubkey = "037eaef9ce945fbcef58c6ca818f433fad8275c09441b06a274a93aa5d69374f62"
 ///     .parse::<Point>()
 ///     .expect("fail");
-/// let secnonce = musig2::SecNonceBuilder::new(nonce_seed, pubkey)
+/// let secnonce = musig2::SecNonceBuilder::from_pubkey(nonce_seed, pubkey)
 ///     .with_message(b"hello world")
 ///     .build();
 ///
@@ -266,16 +188,12 @@ pub struct SecNonceBuilder<'snb> {
 
 impl<'snb> SecNonceBuilder<'snb> {
     /// Start building a nonce, seeded with the given random data
-    /// source `nonce_seed`, which should either be
+    /// source `nonce_seed` and the participant's `pubkey`.
+    ///
+    /// The `nonce_seed` should be either:
     ///
     /// - 32 bytes drawn from a cryptographically secure RNG, OR
     /// - a mutable reference to a secure RNG.
-    ///
-    /// The second parameter `sk_or_pk` should be the secret or public key which
-    /// the nonce will be used to partial-sign with. This key will be used to
-    /// salt the nonce. This can be any pubkey or seckey type such as [`secp::Point`]
-    /// (pubkey) or [`secp::Scalar`] (seckey). See the docs for [`SeckeyOrPubkey`]
-    /// for more detailed info.
     ///
     /// ```
     /// use rand::RngCore as _;
@@ -285,22 +203,14 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// # #[cfg(feature = "rand")]
     /// // Sample the seed automatically
-    /// let secnonce = musig2::SecNonceBuilder::new(&mut rand::rng(), pubkey)
+    /// let secnonce = musig2::SecNonceBuilder::from_pubkey(&mut rand::rng(), pubkey)
     ///     .with_message(b"hello world!")
     ///     .build();
     ///
     /// // Sample the seed manually
     /// let mut nonce_seed = [0u8; 32];
     /// rand::rng().fill_bytes(&mut nonce_seed);
-    /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed, pubkey)
-    ///     .with_message(b"hello world!")
-    ///     .build();
-    ///
-    /// // Use a secret key
-    /// let seckey: Scalar = "10e7721a3aa6de7a98cecdbd7c706c836a907ca46a43235a7b498b12498f98f0"
-    ///    .parse()
-    ///    .unwrap();
-    /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed, seckey)
+    /// let secnonce = musig2::SecNonceBuilder::from_pubkey(nonce_seed, pubkey)
     ///     .with_message(b"hello world!")
     ///     .build();
     /// ```
@@ -313,17 +223,69 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// signing sessions, thus exposing their secret key.](
     #[doc = "https://medium.com/blockstream/musig-dn-schnorr-multisignatures\
              -with-verifiably-deterministic-nonces-27424b5df9d6#e3b6)"]
-    pub fn new(
+    pub fn from_pubkey(
         nonce_seed: impl Into<NonceSeed>,
-        sk_or_pk: impl SeckeyOrPubkey,
+        pubkey: impl Into<Point>,
     ) -> SecNonceBuilder<'snb> {
         let NonceSeed(nonce_seed_bytes) = nonce_seed.into();
-        let pubkey = sk_or_pk.pubkey();
-        let seckey = sk_or_pk.seckey();
         SecNonceBuilder {
             nonce_seed_bytes,
-            pubkey,
-            seckey,
+            pubkey: pubkey.into(),
+            seckey: None,
+            aggregated_pubkey: None,
+            message: None,
+            extra_inputs: Vec::new(),
+        }
+    }
+
+    /// Start building a nonce, seeded with the given random data
+    /// source `nonce_seed` and the participant's secret key `seckey`.
+    ///
+    /// The `nonce_seed` should be either:
+    ///
+    /// - 32 bytes drawn from a cryptographically secure RNG, OR
+    /// - a mutable reference to a secure RNG.
+    ///
+    /// ```
+    /// use rand::RngCore as _;
+    /// use secp::Scalar;
+    ///
+    /// let seckey: Scalar = "10e7721a3aa6de7a98cecdbd7c706c836a907ca46a43235a7b498b12498f98f0"
+    ///    .parse()
+    ///    .unwrap();
+    ///
+    /// # #[cfg(feature = "rand")]
+    /// // Sample the seed automatically
+    /// let secnonce = musig2::SecNonceBuilder::from_seckey(&mut rand::rng(), seckey)
+    ///     .with_message(b"hello world!")
+    ///     .build();
+    ///
+    /// // Sample the seed manually
+    /// let mut nonce_seed = [0u8; 32];
+    /// rand::rng().fill_bytes(&mut nonce_seed);
+    /// let secnonce = musig2::SecNonceBuilder::from_seckey(nonce_seed, seckey)
+    ///     .with_message(b"hello world!")
+    ///     .build();
+    /// ```
+    ///
+    /// # WARNING
+    ///
+    /// It is critical for the `nonce_seed` to be **sampled randomly,** and NOT
+    /// constructed deterministically based on signing session data. Otherwise,
+    /// the signer can be [tricked into reusing the same nonce for concurrent
+    /// signing sessions, thus exposing their secret key.](
+    #[doc = "https://medium.com/blockstream/musig-dn-schnorr-multisignatures\
+             -with-verifiably-deterministic-nonces-27424b5df9d6#e3b6)"]
+    pub fn from_seckey(
+        nonce_seed: impl Into<NonceSeed>,
+        seckey: impl Into<Scalar>,
+    ) -> SecNonceBuilder<'snb> {
+        let NonceSeed(nonce_seed_bytes) = nonce_seed.into();
+        let seckey = seckey.into();
+        SecNonceBuilder {
+            nonce_seed_bytes,
+            pubkey: seckey * G,
+            seckey: Some(seckey),
             aggregated_pubkey: None,
             message: None,
             extra_inputs: Vec::new(),
@@ -365,7 +327,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// # let pubkey = secp::Point::generator();
     /// let remote_ip = [127u8, 0, 0, 1];
     ///
-    /// let secnonce = musig2::SecNonceBuilder::new(nonce_seed, pubkey)
+    /// let secnonce = musig2::SecNonceBuilder::from_pubkey(nonce_seed, pubkey)
     ///     .with_extra_input(b"MyApp")
     ///     .with_extra_input(&remote_ip)
     ///     .with_extra_input(&String::from("What's up buttercup?"))
@@ -385,7 +347,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// The secret key and message will be merged with those in `spices`, preferring
     /// parameters in `spices` if they are present. If a secret key is present in
     /// `spices`, it will also derive the signing public key and override the public
-    /// key given in [`SecNonceBuilder::new`].
+    /// key given in [`SecNonceBuilder::from_pubkey`] or derived in [`SecNonceBuilder::from_seckey`].
     pub fn with_spices(mut self, spices: SecNonceSpices<'snb>) -> SecNonceBuilder<'snb> {
         if let Some(seckey) = spices.seckey {
             self.seckey = Some(seckey);
@@ -493,7 +455,7 @@ impl<'snb> SecNonceBuilder<'snb> {
 ///
 /// `SecNonce`s can be constructed in a variety of ways using different
 /// input sources to increase their entropy. See [`SecNonceBuilder`] and
-/// [`SecNonce::build`] to explore secure nonce generation using
+/// [`SecNonce::build_with_pubkey`] to explore secure nonce generation using
 /// contextual entropy sources.
 ///
 /// Ideally, `SecNonce`s should be generated with a cryptographically secure
@@ -516,14 +478,24 @@ impl SecNonce {
         }
     }
 
-    /// Constructs a new [`SecNonceBuilder`] from the given nonce seed and key.
+    /// Constructs a new [`SecNonceBuilder`] from the given nonce seed and public key.
     ///
-    /// See [`SecNonceBuilder::new`].
-    pub fn build<'snb>(
+    /// See [`SecNonceBuilder::from_pubkey`].
+    pub fn build_with_pubkey<'snb>(
         nonce_seed: impl Into<NonceSeed>,
-        sk_or_pk: impl SeckeyOrPubkey,
+        pubkey: impl Into<Point>,
     ) -> SecNonceBuilder<'snb> {
-        SecNonceBuilder::new(nonce_seed, sk_or_pk)
+        SecNonceBuilder::from_pubkey(nonce_seed, pubkey)
+    }
+
+    /// Constructs a new [`SecNonceBuilder`] from the given nonce seed and secret key.
+    ///
+    /// See [`SecNonceBuilder::from_seckey`].
+    pub fn build_with_seckey<'snb>(
+        nonce_seed: impl Into<NonceSeed>,
+        seckey: impl Into<Scalar>,
+    ) -> SecNonceBuilder<'snb> {
+        SecNonceBuilder::from_seckey(nonce_seed, seckey)
     }
 
     /// Generates a `SecNonce` securely from the given input arguments.
@@ -549,7 +521,7 @@ impl SecNonce {
         message: impl AsRef<[u8]>,
         extra_input: impl AsRef<[u8]>,
     ) -> SecNonce {
-        Self::build(nonce_seed, seckey.into())
+        Self::build_with_seckey(nonce_seed, seckey)
             .with_aggregated_pubkey(aggregated_pubkey)
             .with_message(&message)
             .with_extra_input(&extra_input)
@@ -909,8 +881,8 @@ mod tests {
             }
 
             let mut secnonce_builder = match test_case.seckey {
-                Some(sk) => SecNonce::build(test_case.nonce_seed, sk),
-                None => SecNonce::build(test_case.nonce_seed, test_case.pubkey),
+                Some(sk) => SecNonce::build_with_seckey(test_case.nonce_seed, sk),
+                None => SecNonce::build_with_pubkey(test_case.nonce_seed, test_case.pubkey),
             };
 
             if let Some(aggregated_pubkey) = test_case.aggregated_pubkey {
@@ -943,7 +915,7 @@ mod tests {
         let first_seckey = Scalar::try_from([0x11; 32]).unwrap();
         let second_seckey = Scalar::try_from([0x22; 32]).unwrap();
 
-        let secnonce = SecNonce::build([0xAA; 32], first_seckey)
+        let secnonce = SecNonce::build_with_seckey([0xAA; 32], first_seckey)
             .with_spices(SecNonceSpices::new().with_seckey(second_seckey))
             .build();
 
@@ -957,7 +929,7 @@ mod tests {
         let explicit_pubkey = explicit_seckey.base_point_mul();
         let spice_pubkey = spice_seckey.base_point_mul();
 
-        let secnonce = SecNonce::build([0xAA; 32], explicit_pubkey)
+        let secnonce = SecNonce::build_with_pubkey([0xAA; 32], explicit_pubkey)
             .with_spices(SecNonceSpices::new().with_seckey(spice_seckey))
             .build();
 
@@ -1048,10 +1020,10 @@ mod tests {
 
         let message = b"you betta not sign this twice";
 
-        let alice_secnonce = SecNonceBuilder::new([0xAA; 32], alice_pubkey).build();
-        let bob_secnonce_1 = SecNonceBuilder::new([0xB1; 32], bob_pubkey).build();
-        let bob_secnonce_2 = SecNonceBuilder::new([0xB2; 32], bob_pubkey).build();
-        let bob_secnonce_3 = SecNonceBuilder::new([0xB3; 32], bob_pubkey).build();
+        let alice_secnonce = SecNonceBuilder::from_pubkey([0xAA; 32], alice_pubkey).build();
+        let bob_secnonce_1 = SecNonceBuilder::from_pubkey([0xB1; 32], bob_pubkey).build();
+        let bob_secnonce_2 = SecNonceBuilder::from_pubkey([0xB2; 32], bob_pubkey).build();
+        let bob_secnonce_3 = SecNonceBuilder::from_pubkey([0xB3; 32], bob_pubkey).build();
 
         // First signature
         let aggnonce_1 =
