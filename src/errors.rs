@@ -56,34 +56,49 @@ impl From<secp::errors::InfinityPointError> for TweakError {
     }
 }
 
-/// Returned when passing a signer index which is out of range for a
-/// group of signers
-#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
-pub struct SignerIndexError {
-    /// The index of the signer we did not expect to receive.
-    pub index: usize,
+/// A class of error returned by the state-machine API when creating a
+/// [`FirstRound`][crate::FirstRound] fails.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RoundSetupError {
+    /// Returned when passing a signer index which is out of range for a
+    /// group of signers
+    InvalidSignerIndex {
+        /// The index of the signer we did not expect to receive.
+        index: usize,
 
-    /// The total size of the signing group.
-    pub n_signers: usize,
-}
-impl fmt::Display for SignerIndexError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "signer index {} is out of range for group of {} signers",
-            self.index, self.n_signers
-        )
-    }
-}
-impl Error for SignerIndexError {}
+        /// The total size of the signing group.
+        n_signers: usize,
+    },
 
-impl SignerIndexError {
-    /// Construct a new `SignerIndexError` indicating we received an
+    /// Returned when a secret key is passed into [`SecNonceSpices`][crate::SecNonceSpices],
+    /// but that secret key does not match the public key implied by the signer index.
+    MismatchingSecretKey,
+}
+
+impl RoundSetupError {
+    /// Construct a new `InvalidSignerIndex` error, indicating we received an
     /// invalid index for the given group size of signers.
-    pub(crate) fn new(index: usize, n_signers: usize) -> SignerIndexError {
-        SignerIndexError { index, n_signers }
+    pub(crate) fn signer_index(index: usize, n_signers: usize) -> Self {
+        Self::InvalidSignerIndex { index, n_signers }
     }
 }
+
+impl fmt::Display for RoundSetupError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RoundSetupError::InvalidSignerIndex { index, n_signers } => write!(
+                f,
+                "signer index {} is out of range for group of {} signers",
+                index, n_signers
+            ),
+            RoundSetupError::MismatchingSecretKey => write!(
+                f,
+                "secret key given in SecNonceSpices does not correspond to the requested signer_index"
+            ),
+        }
+    }
+}
+impl Error for RoundSetupError {}
 
 /// Error returned when (partial) signing fails.
 #[derive(Debug, PartialEq, Eq, Clone)]
