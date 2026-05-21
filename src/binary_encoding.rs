@@ -24,10 +24,7 @@ macro_rules! impl_encoding_traits {
     ($typename:ty, $byte_len:expr) => {
         /// assert that $typename implements `BinaryEncoding`
         const _: () = {
-            fn __(
-                x: $typename,
-            ) -> impl BinaryEncoding<Serialized = [u8; $byte_len]>
-            {
+            fn __(x: $typename) -> impl BinaryEncoding<Serialized = [u8; $byte_len]> {
                 x
             }
         };
@@ -160,9 +157,7 @@ macro_rules! impl_encoding_traits {
     ($typename:ty) => {
         /// assert that $typename implements `BinaryEncoding`
         const _: () = {
-            fn __(
-                x: $typename,
-            ) -> impl BinaryEncoding<Serialized = Vec<u8>> {
+            fn __(x: $typename) -> impl BinaryEncoding<Serialized = Vec<u8>> {
                 x
             }
         };
