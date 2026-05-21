@@ -110,6 +110,18 @@ mod tests {
         }
 
         #[derive(serde::Deserialize)]
+        struct SigAggError {
+            signer: usize,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct ErrorSigAggTestCase {
+            psig_indices: Vec<usize>,
+            error: SigAggError,
+            comment: String,
+        }
+
+        #[derive(serde::Deserialize)]
         struct SigAggVectors {
             pubkeys: Vec<Point>,
 
@@ -125,6 +137,7 @@ mod tests {
             message: Vec<u8>,
 
             valid_test_cases: Vec<ValidSigAggTestCase>,
+            error_test_cases: Vec<ErrorSigAggTestCase>,
         }
 
         let vectors: SigAggVectors = serde_json::from_slice(SIG_AGG_VECTORS)
@@ -192,6 +205,29 @@ mod tests {
                     )
                 });
         }
+
+        for test_case in vectors.error_test_cases {
+            for (signer_index, i) in test_case.psig_indices.into_iter().enumerate() {
+                let partial_signature_result =
+                    Scalar::try_from(vectors.partial_signatures[i].as_slice());
+                if signer_index == test_case.error.signer {
+                    assert_eq!(
+                        partial_signature_result,
+                        Err(secp::errors::InvalidScalarBytes),
+                        "{} - expected invalid partial signature from signer {}",
+                        test_case.comment,
+                        signer_index,
+                    );
+                } else {
+                    partial_signature_result.unwrap_or_else(|_| {
+                        panic!(
+                            "{} - unexpected partial signature parsing error for signer {}",
+                            test_case.comment, signer_index
+                        )
+                    });
+                }
+            }
+        }
     }
 
     #[test]
@@ -216,9 +252,9 @@ mod tests {
             let message = b"danger, will robinson!";
 
             let secnonces = [
-                SecNonce::random(&mut rand::rng()),
-                SecNonce::random(&mut rand::rng()),
-                SecNonce::random(&mut rand::rng()),
+                SecNonce::random(&mut rand::rng(), pubkeys[0]),
+                SecNonce::random(&mut rand::rng(), pubkeys[1]),
+                SecNonce::random(&mut rand::rng(), pubkeys[2]),
             ];
 
             let pubnonces = [

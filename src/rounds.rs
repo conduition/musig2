@@ -1,4 +1,4 @@
-use crate::errors::{RoundContributionError, RoundFinalizeError, SignerIndexError, SigningError};
+use crate::errors::{RoundContributionError, RoundFinalizeError, RoundSetupError, SigningError};
 use crate::{
     sign_partial, AdaptorSignature, AggNonce, KeyAggContext, LiftedSignature, NonceSeed,
     PartialSignature, PubNonce, SecNonce, SecNonceSpices,
@@ -94,20 +94,28 @@ impl FirstRound {
     /// there is no possibility of reusing the same nonce seed in a new signing
     /// session.
     ///
-    /// Returns an error if the given signer index is out of range.
+    /// Returns [`RoundSetupError::InvalidSignerIndex`] if the given `signer_index` is
+    /// out of range, or [`RoundSetupError::MismatchingSecretKey`] if a secret key given
+    /// in `spices` does not match the public key for the signer index passed to [`FirstRound::new`].
     pub fn new(
         key_agg_ctx: KeyAggContext,
         nonce_seed: impl Into<NonceSeed>,
         signer_index: usize,
         spices: SecNonceSpices<'_>,
-    ) -> Result<FirstRound, SignerIndexError> {
-        let signer_pubkey: Point = key_agg_ctx
-            .get_pubkey(signer_index)
-            .ok_or_else(|| SignerIndexError::new(signer_index, key_agg_ctx.pubkeys().len()))?;
+    ) -> Result<FirstRound, RoundSetupError> {
+        let signer_pubkey: Point = key_agg_ctx.get_pubkey(signer_index).ok_or_else(|| {
+            RoundSetupError::signer_index(signer_index, key_agg_ctx.pubkeys().len())
+        })?;
+
         let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
 
-        let secnonce = SecNonce::build(nonce_seed)
-            .with_pubkey(signer_pubkey)
+        if let Some(ref sk) = spices.seckey {
+            if sk.base_point_mul() != signer_pubkey {
+                return Err(RoundSetupError::MismatchingSecretKey);
+            }
+        }
+
+        let secnonce = SecNonce::build_with_pubkey(nonce_seed, signer_pubkey)
             .with_aggregated_pubkey(aggregated_pubkey)
             .with_extra_input(&(signer_index as u32).to_be_bytes())
             .with_spices(spices)
@@ -593,7 +601,8 @@ mod tests {
 
         // Invalid partial signatures should be automatically rejected.
         {
-            let wrong_nonce = SecNonce::build([0xCC; 32]).build();
+            let wrong_nonce =
+                SecNonce::build_with_pubkey([0xCC; 32], seckeys[0].base_point_mul()).build();
             let invalid_partial_signature: PartialSignature = sign_partial(
                 &key_agg_ctx,
                 seckeys[0],
@@ -691,5 +700,36 @@ mod tests {
         let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
         verify_single(aggregated_pubkey, last_sig, message)
             .expect("aggregated signature should be valid");
+    }
+
+    #[test]
+    fn first_round_rejects_mismatching_secret_key_in_spices() {
+        let sk1 = "c52be0df73ef4354b2953deb9fdf77749b86946132176a33146f95d46fb065f3"
+            .parse::<Scalar>()
+            .unwrap();
+        let sk2 = "c731a6d52303c68f3efc6c4262c99269140809c39f651196d7264d225c25360d"
+            .parse::<Scalar>()
+            .unwrap();
+
+        let pubkeys = [sk1.base_point_mul(), sk2.base_point_mul()];
+        let key_agg_ctx = KeyAggContext::new(pubkeys).unwrap();
+
+        let sk3 = "10e7721a3aa6de7a98cecdbd7c706c836a907ca46a43235a7b498b12498f98f0"
+            .parse::<Scalar>()
+            .unwrap();
+
+        let signer_index = 0;
+
+        match FirstRound::new(
+            key_agg_ctx.clone(),
+            [0xAC; 32],
+            signer_index,
+            SecNonceSpices::new().with_seckey(sk3),
+        ) {
+            Ok(_) => panic!("expected FirstRound::new to fail"),
+            Err(e) => {
+                assert_eq!(e, RoundSetupError::MismatchingSecretKey);
+            }
+        }
     }
 }
