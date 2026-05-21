@@ -11,13 +11,6 @@
 1. The `SecNonce` serialization format has been updated to comply with BIP327.
 
 ```diff
-diff --git a/src/nonces.rs b/src/nonces.rs
-index 5aa2d9b..d90dfe3 100644
---- a/src/nonces.rs
-+++ b/src/nonces.rs
-@@ -6,7 +6,7 @@ use secp::{MaybePoint, MaybeScalar, Point, Scalar, G};
- use sha2::Digest as _;
-
  /// The size of a serialized [`SecNonce`] in bytes.
 -pub const SEC_NONCE_SIZE: usize = 64;
 +pub const SEC_NONCE_SIZE: usize = 97;
