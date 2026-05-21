@@ -43,9 +43,14 @@ pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
 /// Once aggregated, the signature must be adapted with the discrete log
 /// (secret key) of `adaptor_point` for the signature to be considered valid.
 ///
-/// Returns an error if the given secret key does not belong to this
-/// `key_agg_ctx`. As an added safety, we also verify the partial signature
-/// before returning it.
+/// Returns [`SigningError::UnknownKey`] if the given secret key does not belong to this
+/// `key_agg_ctx`.
+///
+/// Returns [`SigningError::SecNoncePubkeyMismatch`] if the provided [`SecNonce`] was
+/// generated for a different participant's pubkey.
+///
+/// As an added safety, we also verify the partial signature before returning it.
+/// If this check fails, this function returns [`SigningError::SelfVerifyFail`].
 pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,
@@ -63,6 +68,10 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     let key_coeff = key_agg_ctx
         .key_coefficient(pubkey)
         .ok_or(SigningError::UnknownKey)?;
+
+    if secnonce.pubkey != pubkey {
+        return Err(SigningError::SecNoncePubkeyMismatch);
+    }
 
     let aggregated_pubkey = key_agg_ctx.pubkey;
     let pubnonce = secnonce.public_nonce();
@@ -107,12 +116,17 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
 /// scalar value which can then be passed to other signers for verification
 /// and aggregation.
 ///
-/// Returns an error if the given secret key does not belong to this
-/// `key_agg_ctx`. As an added safety, we also verify the partial signature
-/// before returning it.
-///
 /// This is equivalent to invoking [`sign_partial_adaptor`], but passing
 /// [`MaybePoint::Infinity`] as the adaptor point.
+///
+/// Returns [`SigningError::UnknownKey`] if the given secret key does not belong to this
+/// `key_agg_ctx`.
+///
+/// Returns [`SigningError::SecNoncePubkeyMismatch`] if the provided [`SecNonce`] was
+/// generated for a different participant's pubkey.
+///
+/// As an added safety, we also verify the partial signature before returning it.
+/// If this check fails, this function returns [`SigningError::SelfVerifyFail`].
 pub fn sign_partial<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,
@@ -221,6 +235,63 @@ mod tests {
     use crate::testhex;
 
     #[test]
+    fn sign_partial_rejects_secnonce_bound_to_different_pubkey() {
+        let seckey = Scalar::try_from([0x11; 32]).unwrap();
+        let other_seckey = Scalar::try_from([0x22; 32]).unwrap();
+
+        let pubkey = seckey.base_point_mul();
+        let other_pubkey = other_seckey.base_point_mul();
+        let key_agg_ctx = KeyAggContext::new([pubkey]).unwrap();
+        let aggregated_pubkey: Point = key_agg_ctx.aggregated_pubkey();
+        let message = b"key-bound nonce regression";
+
+        let secnonce = SecNonce::generate([0xAA; 32], seckey, aggregated_pubkey, message, b"");
+        let mut secnonce_bytes: Vec<u8> = secnonce.into();
+        secnonce_bytes.truncate(64);
+        secnonce_bytes.extend_from_slice(&other_pubkey.serialize());
+
+        let mismatched_secnonce = SecNonce::from_bytes(&secnonce_bytes).unwrap();
+        let aggregated_nonce = AggNonce::sum([mismatched_secnonce.public_nonce()]);
+
+        let err = sign_partial::<PartialSignature>(
+            &key_agg_ctx,
+            seckey,
+            mismatched_secnonce,
+            &aggregated_nonce,
+            message,
+        )
+        .expect_err("sign_partial accepted a secnonce bound to another public key");
+
+        assert_eq!(err, SigningError::SecNoncePubkeyMismatch);
+    }
+
+    #[test]
+    fn sign_partial_reports_unknown_key_before_secnonce_mismatch() {
+        fn scalar(value: u128) -> Scalar {
+            Scalar::try_from(value).unwrap()
+        }
+
+        let member_seckey = scalar(1);
+        let signing_seckey = scalar(2);
+        let nonce_pubkey = scalar(3).base_point_mul();
+
+        let key_agg_ctx = KeyAggContext::new([member_seckey.base_point_mul()]).unwrap();
+        let secnonce = SecNonce::new(scalar(4), scalar(5), nonce_pubkey);
+        let aggregated_nonce = AggNonce::sum([secnonce.public_nonce()]);
+
+        let err = sign_partial::<PartialSignature>(
+            &key_agg_ctx,
+            signing_seckey,
+            secnonce,
+            &aggregated_nonce,
+            b"unknown key takes precedence",
+        )
+        .expect_err("sign_partial accepted a signer outside the key aggregation context");
+
+        assert_eq!(err, SigningError::UnknownKey);
+    }
+
+    #[test]
     fn test_partial_sign_and_verify() {
         const SIGN_VERIFY_VECTORS: &[u8] = include_bytes!("test_vectors/sign_verify_vectors.json");
 
@@ -237,6 +308,7 @@ mod tests {
         #[derive(serde::Deserialize, Clone)]
         struct SignError {
             signer: Option<usize>,
+            contrib: Option<String>,
         }
 
         #[derive(serde::Deserialize, Clone)]
@@ -257,6 +329,16 @@ mod tests {
             nonce_indices: Vec<usize>,
             msg_index: usize,
             signer_index: usize,
+            comment: String,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct VerifyErrorTestCase {
+            #[serde(rename = "sig", deserialize_with = "testhex::deserialize")]
+            partial_signature: Vec<u8>,
+            key_indices: Vec<usize>,
+            nonce_indices: Vec<usize>,
+            error: SignError,
             comment: String,
         }
 
@@ -283,6 +365,7 @@ mod tests {
             valid_test_cases: Vec<ValidSignVerifyTestCase>,
             sign_error_test_cases: Vec<SignErrorTestCase>,
             verify_fail_test_cases: Vec<VerifyFailTestCase>,
+            verify_error_test_cases: Vec<VerifyErrorTestCase>,
         }
 
         let vectors: SignVerifyVectors = serde_json::from_slice(SIGN_VERIFY_VECTORS)
@@ -513,6 +596,65 @@ mod tests {
                 Err(secp::errors::InvalidScalarBytes),
                 "unexpected valid partial signature"
             );
+        }
+
+        for test_case in vectors.verify_error_test_cases.iter() {
+            PartialSignature::try_from(test_case.partial_signature.as_slice())
+                .expect("verify error test should use a valid partial signature scalar");
+
+            let invalid_signer = test_case
+                .error
+                .signer
+                .expect("verify error test should identify a signer");
+
+            match test_case.error.contrib.as_deref() {
+                Some("pubnonce") => {
+                    for (signer_index, &nonce_index) in test_case.nonce_indices.iter().enumerate() {
+                        let result = PubNonce::from_bytes(&vectors.public_nonces[nonce_index]);
+                        if signer_index == invalid_signer {
+                            assert_eq!(
+                                result,
+                                Err(DecodeError::from(secp::errors::InvalidPointBytes)),
+                                "{} - expected invalid pubnonce for signer {}",
+                                test_case.comment,
+                                signer_index,
+                            );
+                        } else {
+                            result.unwrap_or_else(|_| {
+                                panic!(
+                                    "{} - unexpected pubnonce parsing error for signer {}",
+                                    test_case.comment, signer_index
+                                )
+                            });
+                        }
+                    }
+                }
+                Some("pubkey") => {
+                    for (signer_index, &key_index) in test_case.key_indices.iter().enumerate() {
+                        let result = Point::try_from(&vectors.pubkeys[key_index]);
+                        if signer_index == invalid_signer {
+                            assert_eq!(
+                                result,
+                                Err(secp::errors::InvalidPointBytes),
+                                "{} - expected invalid pubkey for signer {}",
+                                test_case.comment,
+                                signer_index,
+                            );
+                        } else {
+                            result.unwrap_or_else(|_| {
+                                panic!(
+                                    "{} - unexpected pubkey parsing error for signer {}",
+                                    test_case.comment, signer_index
+                                )
+                            });
+                        }
+                    }
+                }
+                other => panic!(
+                    "{} - unsupported verify error contribution: {:?}",
+                    test_case.comment, other
+                ),
+            }
         }
     }
 

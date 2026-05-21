@@ -258,9 +258,7 @@ Instead of using [`FirstRound`] and [`SecondRound`], the Functional API is expos
 # let nonce_seed = [0xACu8; 32];
 use musig2::{AggNonce, SecNonce};
 
-// This is how `FirstRound` derives the nonce internally.
-let secnonce = SecNonce::build(nonce_seed)
-    .with_seckey(seckey)
+let secnonce = SecNonce::build_with_seckey(nonce_seed, seckey)
     .with_message(&message)
     .with_aggregated_pubkey(aggregated_pubkey)
     .with_extra_input(&(signer_index as u32).to_be_bytes())
@@ -632,7 +630,8 @@ let json_data = "{
           03956ec5bd53023261e982ac0c6f5f2e4b6c1e14e9b1992fb62c9bdfcf5b27dc8d\"
     ],
     \"secnonce\": \"B114E502BEAA4E301DD08A50264172C84E41650E6CB726B410C0694D59EFFB64\
-                    95B5CAF28D045B973D63E3C99A44B807BDE375FD6CB39E46DC4A511708D0E9D2\",
+                    95B5CAF28D045B973D63E3C99A44B807BDE375FD6CB39E46DC4A511708D0E9D2\
+                    024D4B6CD1361032CA9BD2AEB9D900AA4D45D9EAD80AC9423374C451A7254D0766\",
     \"message\": \"attack at dawn\"
 }";
 
@@ -642,7 +641,7 @@ use musig2::BinaryEncoding;
 
 let key_agg_bytes: Vec<u8> = session.key_agg_ctx.to_bytes();
 let first_pubnonce_bytes: [u8; 66] = session.pubnonces[0].to_bytes();
-let secnonce_bytes = <[u8; 64]>::from(session.secnonce);
+let secnonce_bytes = <[u8; 97]>::from(session.secnonce);
 
 let decoded_key_agg_ctx = KeyAggContext::from_bytes(&key_agg_bytes).unwrap();
 let decoded_pubnonce = PubNonce::try_from(&first_pubnonce_bytes).unwrap();

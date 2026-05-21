@@ -91,3 +91,12 @@ where
         .collect();
     Ok(items)
 }
+
+pub fn deserialize_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: TryFromBytes,
+{
+    let item = Option::<HexString<T>>::deserialize(deserializer)?;
+    Ok(item.map(|HexString(value)| value))
+}
