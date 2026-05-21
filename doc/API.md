@@ -258,9 +258,7 @@ Instead of using [`FirstRound`] and [`SecondRound`], the Functional API is expos
 # let nonce_seed = [0xACu8; 32];
 use musig2::{AggNonce, SecNonce};
 
-// This is how `FirstRound` derives the nonce internally.
-let secnonce = SecNonce::build(nonce_seed)
-    .with_seckey(seckey)
+let secnonce = SecNonce::build_with_seckey(nonce_seed, seckey)
     .with_message(&message)
     .with_aggregated_pubkey(aggregated_pubkey)
     .with_extra_input(&(signer_index as u32).to_be_bytes())
