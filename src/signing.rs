@@ -275,18 +275,16 @@ mod tests {
 
     #[test]
     fn sign_partial_reports_unknown_key_before_secnonce_mismatch() {
-        fn small_scalar(value: u8) -> Scalar {
-            let mut bytes = [0u8; 32];
-            bytes[31] = value;
-            Scalar::try_from(bytes).unwrap()
+        fn scalar(value: u128) -> Scalar {
+            Scalar::try_from(value).unwrap()
         }
 
-        let member_seckey = small_scalar(1);
-        let signing_seckey = small_scalar(2);
-        let nonce_pubkey = small_scalar(3).base_point_mul();
+        let member_seckey = scalar(1);
+        let signing_seckey = scalar(2);
+        let nonce_pubkey = scalar(3).base_point_mul();
 
         let key_agg_ctx = KeyAggContext::new([member_seckey.base_point_mul()]).unwrap();
-        let secnonce = SecNonce::new(small_scalar(4), small_scalar(5), nonce_pubkey);
+        let secnonce = SecNonce::new(scalar(4), scalar(5), nonce_pubkey);
         let aggregated_nonce = AggNonce::sum([secnonce.public_nonce()]);
 
         let err = sign_partial::<PartialSignature>(
