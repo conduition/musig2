@@ -75,6 +75,7 @@ These changes are mostly a reflection of the above changes to the `SecNonceBuild
   - `SecNonce::build_with_seckey` is an alias to `SecNonceBuilder::from_seckey`.
 - The `SecNonce::random` method arguments have been extended with a mandatory public key parameter.
 
+**Recommended Fix:** The state-machine API will handle this adjustment for you. If you use the state-machine API, no action should be needed. If you use the functional API, you will need to update your code to provide a public or secret key when building a `SecNonce`.
 
 4. `FirstRound::new` returns a new error type, `RoundSetupError`.
 
