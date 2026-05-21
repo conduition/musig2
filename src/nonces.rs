@@ -90,7 +90,7 @@ impl<'ns> SecNonceSpices<'ns> {
 
     /// Add the secret key you intend to sign with to the spice rack.
     /// This should be the secret key which will be used to sign with,
-    /// otherwise a validation error will occur later at the signing phase.
+    /// otherwise a validation error will occur later.
     pub fn with_seckey(self, seckey: impl Into<Scalar>) -> SecNonceSpices<'ns> {
         SecNonceSpices {
             seckey: Some(seckey.into()),
