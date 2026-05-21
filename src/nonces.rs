@@ -111,7 +111,9 @@ impl<'ns> SecNonceSpices<'ns> {
     /// Add some arbitrary extra input, any context-specific data you have on hand, to
     /// spice up the nonce generation process. This method is additive, appending
     /// further extra data on top of previous chunks, which will all be cumulatively
-    /// hashed to produce the final secret nonce.
+    /// hashed to produce the final secret nonce. Extra input accumulate in memory
+    /// up to a limit of [`u32::MAX`] bytes (about 4GB). This method will panic if
+    /// the sum of all extra inputs attached to the spice rack would exceed that limit.
     ///
     /// ```
     /// let session_id = [0x11u8; 16];
