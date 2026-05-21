@@ -4,7 +4,7 @@
 
 - **DX**: New benchmarks for verification, signing and comparison against libsecp256k1.
 - **SecNonce changes:** To fully comply with BIP-327, the `SecNonce` and `SecNonceBuilder` API have been changed (https://github.com/conduition/musig2/pull/17). The `SecNonce` data structure now includes the signer's public key. See below for migration instructions.
-- **Security Improvement:** To align with BIP-327 security recommendations, we now validate the pubkey now contained in `SecNonce` against the key provided by the signer in the `sign_partial` and `adaptor::sign_partial` functions, and if they do not align we return a new error enum member `SigningError::SecNoncePubkeyMismatch`. In the state-machine API, this can only happen if you pass in the secret key of a _different_ pubkey within the same `KeyAggContext` as passed to `FirstRound::new`.
+- **Security Improvement:** To align with BIP-327 security recommendations, we now validate the pubkey contained in `SecNonce` against the key provided by the signer in the `sign_partial` and `adaptor::sign_partial` functions, and if they do not align we return a new error enum member `SigningError::SecNoncePubkeyMismatch`. In the state-machine API, this can only happen if you pass in the secret key of a _different_ pubkey within the same `KeyAggContext` as passed to `FirstRound::new`.
 
 ### Breaking Changes
 
