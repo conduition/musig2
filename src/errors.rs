@@ -61,7 +61,7 @@ impl From<secp::errors::InfinityPointError> for TweakError {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RoundSetupError {
     /// Returned when passing a signer index which is out of range for a
-    /// group of signers
+    /// group of signers.
     InvalidSignerIndex {
         /// The index of the signer we did not expect to receive.
         index: usize,

@@ -43,9 +43,14 @@ pub fn compute_challenge_hash_tweak<S: From<MaybeScalar>>(
 /// Once aggregated, the signature must be adapted with the discrete log
 /// (secret key) of `adaptor_point` for the signature to be considered valid.
 ///
-/// Returns an error if the given secret key does not belong to this
-/// `key_agg_ctx`. As an added safety, we also verify the partial signature
-/// before returning it.
+/// Returns [`SigningError::UnknownKey`] if the given secret key does not belong to this
+/// `key_agg_ctx`.
+///
+/// Returns [`SigningError::SecNoncePubkeyMismatch`] if the provided [`SecNonce`] was
+/// generated for a different participant's pubkey.
+///
+/// As an added safety, we also verify the partial signature before returning it.
+/// If this check fails, this function returns [`SigningError::SelfVerifyFail`].
 pub fn sign_partial_adaptor<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,
@@ -111,12 +116,17 @@ pub fn sign_partial_adaptor<T: From<PartialSignature>>(
 /// scalar value which can then be passed to other signers for verification
 /// and aggregation.
 ///
-/// Returns an error if the given secret key does not belong to this
-/// `key_agg_ctx`. As an added safety, we also verify the partial signature
-/// before returning it.
-///
 /// This is equivalent to invoking [`sign_partial_adaptor`], but passing
 /// [`MaybePoint::Infinity`] as the adaptor point.
+///
+/// Returns [`SigningError::UnknownKey`] if the given secret key does not belong to this
+/// `key_agg_ctx`.
+///
+/// Returns [`SigningError::SecNoncePubkeyMismatch`] if the provided [`SecNonce`] was
+/// generated for a different participant's pubkey.
+///
+/// As an added safety, we also verify the partial signature before returning it.
+/// If this check fails, this function returns [`SigningError::SelfVerifyFail`].
 pub fn sign_partial<T: From<PartialSignature>>(
     key_agg_ctx: &KeyAggContext,
     seckey: impl Into<Scalar>,

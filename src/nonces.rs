@@ -68,13 +68,14 @@ fn extra_input_length_check<T: AsRef<[u8]>>(extra_inputs: &[T]) {
 /// These parameters are usually not functionally required for any operations
 /// after nonce generation.
 ///
-/// Beware that if you provide a secret key in the `SecNonceSpices`, it will
-/// override any public or secret key given explicitly in the constructor of
-/// [`SecNonceBuilder`].
-///
 /// This type is meant to be used as a parameter of the state-machine API available
 /// via [`FirstRound`][crate::FirstRound] and [`SecondRound`][crate::SecondRound].
 /// For standalone nonce generation, see [`SecNonceBuilder`] or [`SecNonce::generate`].
+///
+/// If you do not use the state-machine API, beware that if you provide a secret key
+/// in the `SecNonceSpices` and then pass the spices to [`SecNonceBuilder::with_spices`],
+/// it will override any public or secret key given explicitly in the constructors
+/// of [`SecNonceBuilder`].
 #[derive(Clone, Default)]
 pub struct SecNonceSpices<'ns> {
     pub(crate) seckey: Option<Scalar>,
@@ -89,7 +90,7 @@ impl<'ns> SecNonceSpices<'ns> {
     }
 
     /// Add the secret key you intend to sign with to the spice rack.
-    /// This should be the secret key which will be used to sign with,
+    /// This must be the secret key which will be used to sign with,
     /// otherwise a validation error will occur later.
     pub fn with_seckey(self, seckey: impl Into<Scalar>) -> SecNonceSpices<'ns> {
         SecNonceSpices {
@@ -98,9 +99,8 @@ impl<'ns> SecNonceSpices<'ns> {
         }
     }
 
-    /// Spices up the nonce with the message you intend to sign. Similarly
-    /// to [`SecNonceSpices::with_seckey`], this doesn't need to be the actual message
-    /// you end up signing, but that would help.
+    /// Spices up the nonce with the message you intend to sign. This doesn't
+    /// need to be the actual message you end up signing, but consistency would help.
     pub fn with_message<M: AsRef<[u8]>>(self, message: &'ns M) -> SecNonceSpices<'ns> {
         SecNonceSpices {
             message: Some(message),
@@ -192,7 +192,7 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///
     /// ```
     /// use rand::RngCore as _;
-    /// use secp::{Point, Scalar};
+    /// use secp::Point;
     ///
     /// let pubkey = Point::generator();
     ///
@@ -209,6 +209,10 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///     .with_message(b"hello world!")
     ///     .build();
     /// ```
+    ///
+    /// The returned `SecNonce` is bound to the given `pubkey`. Signing with
+    /// a secret key that does not correspond to this public key will fail with
+    /// [`SigningError::SecNoncePubkeyMismatch`][crate::errors::SigningError::SecNoncePubkeyMismatch].
     ///
     /// # WARNING
     ///
@@ -262,6 +266,10 @@ impl<'snb> SecNonceBuilder<'snb> {
     ///     .with_message(b"hello world!")
     ///     .build();
     /// ```
+    ///
+    /// The returned `SecNonce` is bound to the given `seckey`. Signing with
+    /// a different secret key will fail with
+    /// [`SigningError::SecNoncePubkeyMismatch`][crate::errors::SigningError::SecNoncePubkeyMismatch].
     ///
     /// # WARNING
     ///
@@ -369,9 +377,6 @@ impl<'snb> SecNonceBuilder<'snb> {
     /// This method matches the standard nonce generation algorithm specified in
     /// [BIP327](https://github.com/bitcoin/bips/blob/master/bip-0327.mediawiki),
     /// except in the extremely unlikely case of a hash reducing to zero.
-    /// This crate keeps the BIP327 97-byte local `secnonce` form, embedding
-    /// the signing public key alongside the two secret nonce scalars so signing
-    /// can reject use with a different key.
     pub fn build(self) -> SecNonce {
         let rand = match self.seckey {
             Some(seckey) => {
@@ -440,8 +445,8 @@ impl<'snb> SecNonceBuilder<'snb> {
     }
 }
 
-/// A pair of secret nonce scalars, used to conceal a secret key when
-/// signing a message.
+/// A pair of secret nonce scalars and a pubkey, used to conceal a secret key when
+/// co-signing a message.
 ///
 /// The secret nonce provides randomness, blinding a signer's private key when
 /// signing. It is imperative that the same `SecNonce` is not used to sign more
@@ -455,6 +460,11 @@ impl<'snb> SecNonceBuilder<'snb> {
 ///
 /// Ideally, `SecNonce`s should be generated with a cryptographically secure
 /// random number generator via [`SecNonce::generate`].
+///
+/// A `SecNonce` can be serialized with the [`SecNonce::serialize`] method. The
+/// serialized format matches the 97-byte encoding of BIP-327, which embeds the
+/// signing public key alongside the two secret nonce scalars, so signing can
+/// reject incorrect secret keys.
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct SecNonce {
     pub(crate) k1: Scalar,
@@ -508,6 +518,10 @@ impl SecNonce {
     /// and all arguments are required. If you cannot supply all arguments
     /// to the nonce generation algorithm, use [`SecNonceBuilder`].
     ///
+    /// The returned `SecNonce` is bound to the given `seckey`. Signing with
+    /// a different secret key will fail with
+    /// [`SigningError::SecNoncePubkeyMismatch`][crate::errors::SigningError::SecNoncePubkeyMismatch].
+    ///
     /// Panics if the extra input length is greater than [`u32::MAX`].
     pub fn generate(
         nonce_seed: impl Into<NonceSeed>,
@@ -534,7 +548,7 @@ impl SecNonce {
     /// [`SecNonce::generate`] is more secure because it combines multiple sources of
     /// entropy to compute the final nonce.
     ///
-    /// The `pubkey` argument is bound into the returned `SecNonce`. Signing with
+    /// The returned `SecNonce` is bound to the given `pubkey`. Signing with
     /// a secret key that does not correspond to this public key will fail with
     /// [`SigningError::SecNoncePubkeyMismatch`][crate::errors::SigningError::SecNoncePubkeyMismatch].
     #[cfg(any(test, feature = "rand"))]
