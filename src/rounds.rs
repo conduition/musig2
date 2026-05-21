@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn first_round_rejects_mismatching_secret_key_in_spices() {
+    fn first_round_rejects_mismatching_secret_keys() {
         let sk1 = "c52be0df73ef4354b2953deb9fdf77749b86946132176a33146f95d46fb065f3"
             .parse::<Scalar>()
             .unwrap();
@@ -718,18 +718,57 @@ mod tests {
             .parse::<Scalar>()
             .unwrap();
 
-        let signer_index = 0;
-
+        // Specify the wrong secret key in the same KeyAggContext
         match FirstRound::new(
             key_agg_ctx.clone(),
             [0xAC; 32],
-            signer_index,
+            0, // signer_index
+            SecNonceSpices::new().with_seckey(sk2),
+        ) {
+            Ok(_) => panic!("expected FirstRound::new to fail"),
+            Err(e) => {
+                assert_eq!(e, RoundSetupError::MismatchingSecretKey);
+            }
+        }
+
+        // Specify the wrong secret key outside of the KeyAggContext
+        match FirstRound::new(
+            key_agg_ctx.clone(),
+            [0xAC; 32],
+            0, // signer_index
             SecNonceSpices::new().with_seckey(sk3),
         ) {
             Ok(_) => panic!("expected FirstRound::new to fail"),
             Err(e) => {
                 assert_eq!(e, RoundSetupError::MismatchingSecretKey);
             }
+        }
+
+        let mut first_round1 = FirstRound::new(
+            key_agg_ctx.clone(),
+            [0xAC; 32],
+            0, // signer_index
+            SecNonceSpices::new().with_seckey(sk1),
+        )
+        .unwrap();
+
+        first_round1
+            .receive_nonce(
+                1,
+                SecNonce::build_with_pubkey([0x12; 32], sk2.base_point_mul())
+                    .build()
+                    .public_nonce(),
+            )
+            .expect("failed to receive nonce");
+
+        // Finalizing with the wrong secret key but within the same KeyAggContext should
+        // return an error.
+        match first_round1.finalize(sk2, b"hello world") {
+            Ok(_) => panic!("finalizing with the wrong secret key should fail"),
+            Err(e) => assert_eq!(
+                e,
+                RoundFinalizeError::SigningError(SigningError::SecNoncePubkeyMismatch)
+            ),
         }
     }
 }
