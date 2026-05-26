@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.1
+
+- **Deps**: Remove direct dependence on `once_cell` (https://github.com/conduition/musig2/pull/11 https://github.com/conduition/secp/commit/f09e4397dd802946e0e1902f62aa63569cd02a3a)
+- **Fixed panic**: Previously, if the third-party type `secp256k1::Scalar` was passed to any of the myriad methods of `musig2` which accept `impl Into<secp::Scalar>`, it would cause a panic when `secp256k1::Scalar::ZERO` is given. This was fixed upstream (https://github.com/conduition/secp/commit/84a9c4c1d23acc328a300270dcccbdc191b383a1) and applied in `musig2` in this commit (https://github.com/conduition/musig2/commit/a821f6129cee192579ee1a1765dd42e16835cb3d).
+
+### Breaking Changes
+
+The `musig2` API no longer accepts the third-party type `secp256k1::Scalar` in parameters which must implement `Into<secp::Scalar>`. This is because `secp256k1::Scalar` can be zero, but `secp::Scalar` cannot. This change was required to prevent panics.
+
 ## v0.4.0
 
 - **DX**: New benchmarks for verification, signing and comparison against libsecp256k1.
