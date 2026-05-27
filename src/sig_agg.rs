@@ -128,7 +128,7 @@ mod tests {
             #[serde(rename = "pnonces")]
             public_nonces: Vec<PubNonce>,
 
-            tweaks: Vec<Scalar>,
+            tweaks: Vec<MaybeScalar>,
 
             #[serde(rename = "psigs", deserialize_with = "testhex::deserialize_vec")]
             partial_signatures: Vec<Vec<u8>>,

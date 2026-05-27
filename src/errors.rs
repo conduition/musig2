@@ -38,10 +38,11 @@ impl From<secp::errors::ZeroScalarError> for InvalidSecretKeysError {
     }
 }
 
-/// Returned when tweaking a [`KeyAggContext`] results in the point
-/// at infinity, or if using [`KeyAggContext::with_taproot_tweak`]
-/// when the tweak input results in a hash which exceeds the curve
-/// order (exceedingly unlikely)"
+/// Returned when a tweak is outside the BIP327 range `0 <= t < n`, or when
+/// applying a tweak to a [`KeyAggContext`] results in the point at infinity.
+///
+/// The zero tweak is valid. For taproot tweaks, this error can occur if the
+/// tweak hash exceeds the curve order, which is exceedingly unlikely.
 #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub struct TweakError;
 impl fmt::Display for TweakError {

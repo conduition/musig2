@@ -724,7 +724,7 @@ mod tests {
                 .tweak_indices
                 .into_iter()
                 .map(|i| {
-                    Scalar::try_from(vectors.tweaks[i].as_slice())
+                    MaybeScalar::try_from(vectors.tweaks[i].as_slice())
                         .expect("failed to parse valid tweak value")
                 })
                 .zip(test_case.is_xonly)
