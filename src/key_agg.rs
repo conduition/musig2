@@ -772,50 +772,42 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "secp256k1")]
-    fn small_scalar(value: u8) -> Scalar {
-        let mut bytes = [0u8; 32];
-        bytes[31] = value;
-        Scalar::try_from(bytes).unwrap()
+    fn scalar(value: u128) -> Scalar {
+        Scalar::try_from(value).unwrap()
     }
 
-    #[cfg(feature = "secp256k1")]
     fn two_key_context() -> KeyAggContext {
         let seckeys = two_key_seckeys();
         KeyAggContext::new(seckeys.map(|seckey| seckey.base_point_mul())).unwrap()
     }
 
-    #[cfg(feature = "secp256k1")]
     fn two_key_seckeys() -> [Scalar; 2] {
-        [small_scalar(1), small_scalar(2)]
+        [scalar(1), scalar(2)]
     }
 
-    #[cfg(feature = "secp256k1")]
     fn odd_plain_tweaked_context() -> (KeyAggContext, KeyAggContext) {
         let base = two_key_context();
         let ctx = base
             .clone()
-            .with_plain_tweak(small_scalar(3))
+            .with_plain_tweak(scalar(3))
             .expect("non-zero tweak should be valid");
         assert!(ctx.pubkey.has_odd_y(), "test fixture must have odd Y");
         (base, ctx)
     }
 
-    #[cfg(feature = "secp256k1")]
     fn odd_two_key_context() -> ([Scalar; 2], KeyAggContext) {
-        let seckeys = [small_scalar(1), small_scalar(3)];
+        let seckeys = [scalar(1), scalar(3)];
         let ctx = KeyAggContext::new(seckeys.map(|seckey| seckey.base_point_mul())).unwrap();
         assert!(ctx.pubkey.has_odd_y(), "test fixture must have odd Y");
         (seckeys, ctx)
     }
 
-    #[cfg(feature = "secp256k1")]
     #[test]
     fn key_agg_accepts_zero_plain_tweak() {
         let ctx = two_key_context();
         let tweaked = ctx
             .clone()
-            .with_plain_tweak(secp256k1::Scalar::ZERO)
+            .with_plain_tweak(MaybeScalar::Zero)
             .expect("zero tweak should be valid");
 
         assert_eq!(
@@ -824,9 +816,60 @@ mod tests {
         );
         assert_eq!(bool::from(tweaked.parity_acc), bool::from(ctx.parity_acc));
         assert_eq!(tweaked.tweak_sum::<Scalar>(), None);
+
+        #[cfg(feature = "secp256k1")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_plain_tweak(secp256k1::Scalar::ZERO)
+                .expect("zero tweak with secp256k1::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
+
+        #[cfg(feature = "k256")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_plain_tweak(k256::Scalar::ZERO)
+                .expect("zero tweak with k256::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
     }
 
-    #[cfg(feature = "secp256k1")]
+    #[test]
+    fn key_agg_accepts_zero_xonly_tweak() {
+        let ctx = two_key_context();
+        let tweaked = ctx
+            .clone()
+            .with_xonly_tweak(MaybeScalar::Zero)
+            .expect("zero tweak should be valid");
+
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.aggregated_pubkey::<Point>()
+        );
+        assert_eq!(bool::from(tweaked.parity_acc), bool::from(ctx.parity_acc));
+        assert_eq!(tweaked.tweak_sum::<Scalar>(), None);
+
+        #[cfg(feature = "secp256k1")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_xonly_tweak(secp256k1::Scalar::ZERO)
+                .expect("zero tweak with secp256k1::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
+
+        #[cfg(feature = "k256")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_xonly_tweak(k256::Scalar::ZERO)
+                .expect("zero tweak with k256::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
+    }
+
     #[test]
     fn key_agg_accepts_zero_xonly_tweak_on_odd_key() {
         let (base, ctx) = odd_plain_tweaked_context();
@@ -837,7 +880,7 @@ mod tests {
 
         let tweaked = ctx
             .clone()
-            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .with_xonly_tweak(MaybeScalar::Zero)
             .expect("zero tweak should be valid");
 
         assert_eq!(tweaked.pubkey, -pubkey_before);
@@ -854,27 +897,44 @@ mod tests {
             tweaked.aggregated_pubkey_untweaked::<Point>(),
             base.aggregated_pubkey::<Point>()
         );
+
+        #[cfg(feature = "secp256k1")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_xonly_tweak(secp256k1::Scalar::ZERO)
+                .expect("zero tweak with secp256k1::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
+
+        #[cfg(feature = "k256")]
+        assert_eq!(
+            tweaked.aggregated_pubkey::<Point>(),
+            ctx.clone()
+                .with_xonly_tweak(k256::Scalar::ZERO)
+                .expect("zero tweak with k256::Scalar should be valid")
+                .aggregated_pubkey::<Point>(),
+        );
     }
 
-    #[cfg(feature = "secp256k1")]
     #[test]
     fn key_agg_accepts_zero_xonly_tweak_with_existing_parity_acc() {
-        let (_base, ctx) = odd_plain_tweaked_context();
+        let (_, ctx) = odd_plain_tweaked_context();
         let normalized = ctx
-            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .with_xonly_tweak(MaybeScalar::Zero)
             .expect("zero tweak should be valid");
         assert!(normalized.pubkey.has_even_y());
         assert!(bool::from(normalized.parity_acc));
 
         let odd_again = normalized
-            .with_plain_tweak(small_scalar(2))
+            .with_plain_tweak(scalar(2))
             .expect("non-zero tweak should be valid");
         assert!(odd_again.pubkey.has_odd_y(), "test fixture must have odd Y");
         assert!(bool::from(odd_again.parity_acc));
 
         let renormalized = odd_again
             .clone()
-            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .with_xonly_tweak(MaybeScalar::Zero)
             .expect("zero tweak should be valid");
 
         assert_eq!(renormalized.pubkey, -odd_again.pubkey);
@@ -882,14 +942,13 @@ mod tests {
         assert_eq!(renormalized.tweak_acc, -odd_again.tweak_acc);
     }
 
-    #[cfg(feature = "secp256k1")]
     #[test]
     fn key_agg_serializes_zero_xonly_tweak_state() {
         let (seckeys, ctx) = odd_two_key_context();
         assert_eq!(ctx.tweak_acc, MaybeScalar::Zero);
 
         let tweaked = ctx
-            .with_xonly_tweak(secp256k1::Scalar::ZERO)
+            .with_xonly_tweak(MaybeScalar::Zero)
             .expect("zero tweak should be valid");
 
         assert!(tweaked.pubkey.has_even_y());
