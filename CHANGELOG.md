@@ -2,12 +2,31 @@
 
 ## v0.4.1
 
-- **Deps**: Remove direct dependence on `once_cell` (https://github.com/conduition/musig2/pull/11 https://github.com/conduition/secp/commit/f09e4397dd802946e0e1902f62aa63569cd02a3a)
-- **Fixed panic**: Previously, if the third-party type `secp256k1::Scalar` was passed to any of the myriad methods of `musig2` which accept `impl Into<secp::Scalar>`, it would cause a panic when `secp256k1::Scalar::ZERO` is given. This was fixed upstream (https://github.com/conduition/secp/commit/84a9c4c1d23acc328a300270dcccbdc191b383a1) and applied in `musig2` in this commit (https://github.com/conduition/musig2/commit/a821f6129cee192579ee1a1765dd42e16835cb3d).
+- **Deps**: Remove direct dependence on `once_cell` (https://github.com/conduition/musig2/pull/11 [`f09e4397`](https://github.com/conduition/secp/commit/f09e4397dd802946e0e1902f62aa63569cd02a3a))
+- **Fixed panic**: Previously, if the third-party type `secp256k1::Scalar` was passed to any of the myriad methods of `musig2` which accept `impl Into<secp::Scalar>`, it would cause a panic when `secp256k1::Scalar::ZERO` is given. This was fixed upstream ([`84a9c4c1`](https://github.com/conduition/secp/commit/84a9c4c1d23acc328a300270dcccbdc191b383a1)) and applied in `musig2` in [this commit](https://github.com/conduition/musig2/commit/a821f6129cee192579ee1a1765dd42e16835cb3d).
+- **Zero Tweaks**: The `KeyAggContext` type previously accepted only non-zero scalar types - i.e. any type implementing `Into<Scalar>` - in its tweaking methods. These methods now accept `impl Into<MaybeScalar>` (https://github.com/conduition/musig2/pull/16), allowing callers to tweak a `KeyAggContext` with a no-op/normalization tweak to better comply with BIP327.
 
 ### Breaking Changes
 
-The `musig2` API no longer accepts the third-party type `secp256k1::Scalar` in parameters which must implement `Into<secp::Scalar>`. This is because `secp256k1::Scalar` can be zero, but `secp::Scalar` cannot. This change was required to prevent panics.
+1. The `musig2` API no longer accepts the third-party type `secp256k1::Scalar` in parameters which must implement `Into<secp::Scalar>`. This is because `secp256k1::Scalar` can be zero, but `secp::Scalar` cannot. This change was required to prevent panics.
+
+2. The following input parameter type restrictions have been changed on the methods of `KeyAggContext`:
+
+```diff
+-pub fn with_tweak(self, tweak: impl Into<Scalar>, is_xonly: bool) -> Result<Self, TweakError>;
++pub fn with_tweak(self, tweak: impl Into<MaybeScalar>, is_xonly: bool) -> Result<Self, TweakError>;
+ pub fn with_tweaks<S, I>(mut self, tweaks: I) -> Result<Self, TweakError>
+     where
+         I: IntoIterator<Item = (S, bool)>,
+-        S: Into<Scalar>,
++        S: Into<MaybeScalar>
+-pub fn with_plain_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError>;
++pub fn with_plain_tweak(self, tweak: impl Into<MaybeScalar>) -> Result<Self, TweakError>;
+-pub fn with_xonly_tweak(self, tweak: impl Into<Scalar>) -> Result<Self, TweakError>;
++pub fn with_xonly_tweak(self, tweak: impl Into<MaybeScalar>) -> Result<Self, TweakError>;
+```
+
+For most use-cases, this change should be backwards compatible. Most types which implement `Into<Scalar>` also implement `Into<MaybeScalar>`. However if you have implemented `Into<Scalar>` on a custom type, you may also need to implement `Into<MaybeScalar>` explicitly as well to make that type a valid argument to these methods.
 
 ## v0.4.0
 
